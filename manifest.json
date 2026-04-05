@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT to Notion",
+  "description": "Move ChatGPT answers into Notion with native inline equations and equation blocks.",
+  "version": "0.2.0",
+  "permissions": [
+    "clipboardRead",
+    "clipboardWrite",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://www.notion.so/*",
+    "https://notion.so/*",
+    "https://api.notion.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "converter.js",
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.notion.so/*",
+        "https://notion.so/*"
+      ],
+      "js": [
+        "notion-content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ChatGPT to Notion",
+    "default_popup": "popup.html"
+  }
+}

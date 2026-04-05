@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ChatGPT to Notion</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <h1>ChatGPT to Notion</h1>
+      <p class="lead">Save your Notion integration token, then copy in ChatGPT and paste in Notion.</p>
+
+      <label class="field">
+        <span>Notion integration token</span>
+        <input id="token" type="password" placeholder="secret_xxx or ntn_xxx">
+      </label>
+
+      <div class="actions">
+        <button id="save" type="button">Save</button>
+        <button id="test" type="button" class="secondary">Test</button>
+      </div>
+
+      <section class="status">
+        <div id="token-status">Token: not saved</div>
+        <div id="copy-status">Last ChatGPT capture: none</div>
+        <div id="connection-status">Connection: not tested</div>
+      </section>
+
+      <section class="notes">
+        <p>1. Create a Notion integration.</p>
+        <p>2. Share the target page with that integration.</p>
+        <p>3. Click <strong>Copy for Notion</strong> in ChatGPT.</p>
+        <p>4. In Notion, press paste or click <strong>Paste ChatGPT</strong>.</p>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
