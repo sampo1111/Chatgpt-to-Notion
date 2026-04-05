@@ -228,32 +228,27 @@ async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId }) {
   }
 
   const normalizedPageId = normalizeNotionId(pageId);
-  const children = blocksToNotionChildren(blocks);
+  const nodes = blocksToAppendNodes(blocks);
   const appendTarget = await resolveAppendTarget({
     pageId: normalizedPageId,
     anchorBlockId,
     token
   });
 
-  if (!children.length) {
+  if (!nodes.length) {
     throw new Error("There was nothing to send to Notion.");
   }
 
-  let afterBlockId = appendTarget.afterBlockId;
   const parentId = appendTarget.parentId;
-
-  for (const childChunk of buildAppendChunks(children, parentId, afterBlockId)) {
-    const appendResult = await appendChunkWithRetry({
-      parentId,
-      afterBlockId,
-      childChunk,
-      token
-    });
-    afterBlockId = appendResult.lastInsertedId || null;
-  }
+  const appendResult = await appendNodesToParent({
+    parentId,
+    afterBlockId: appendTarget.afterBlockId,
+    nodes,
+    token
+  });
 
   return {
-    appendedBlocks: children.length,
+    appendedBlocks: appendResult.appendedCount,
     pageId: normalizedPageId,
     parentId,
     anchorBlockId: appendTarget.anchorBlockId || null
@@ -347,11 +342,32 @@ async function resolveAppendTarget({ pageId, anchorBlockId, token }) {
   }
 }
 
-function blocksToNotionChildren(blocks) {
+async function appendNodesToParent({ parentId, afterBlockId, nodes, token }) {
+  let nextAfterBlockId = afterBlockId;
+  let appendedCount = 0;
+
+  for (const nodeChunk of buildAppendChunks(nodes, parentId, nextAfterBlockId)) {
+    const appendResult = await appendChunkWithRetry({
+      parentId,
+      afterBlockId: nextAfterBlockId,
+      nodeChunk,
+      token
+    });
+    nextAfterBlockId = appendResult.lastInsertedId || null;
+    appendedCount += appendResult.appendedCount;
+  }
+
+  return {
+    lastInsertedId: nextAfterBlockId,
+    appendedCount
+  };
+}
+
+function blocksToAppendNodes(blocks) {
   const output = [];
 
   for (const block of blocks) {
-    output.push(...blockToNotionBlocks(block));
+    output.push(...blockToAppendNodes(block));
   }
 
   return output;
@@ -373,31 +389,42 @@ function createAppendBody(children, afterBlockId) {
   };
 }
 
-async function appendChunkWithRetry({ parentId, afterBlockId, childChunk, token }) {
+async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token }) {
+  const payloadChunk = nodeChunk.map((node) => node.payload);
+
   try {
     const response = await notionFetch(`/blocks/${parentId}/children`, {
       method: "PATCH",
       token,
-      body: createAppendBody(childChunk, afterBlockId)
+      body: createAppendBody(payloadChunk, afterBlockId)
+    });
+
+    const results = Array.isArray(response?.results) ? response.results : [];
+
+    await appendNestedChildrenForChunk({
+      nodeChunk,
+      results,
+      token
     });
 
     return {
       response,
-      lastInsertedId: response?.results?.[response.results.length - 1]?.id || afterBlockId || null
+      lastInsertedId: results[results.length - 1]?.id || afterBlockId || null,
+      appendedCount: countAppendNodes(nodeChunk)
     };
   } catch (error) {
-    if (!isRequestBodyTooLargeError(error) || childChunk.length <= 1) {
+    if (!isRequestBodyTooLargeError(error) || nodeChunk.length <= 1) {
       throw error;
     }
 
-    const midpoint = Math.ceil(childChunk.length / 2);
-    const firstHalf = childChunk.slice(0, midpoint);
-    const secondHalf = childChunk.slice(midpoint);
+    const midpoint = Math.ceil(nodeChunk.length / 2);
+    const firstHalf = nodeChunk.slice(0, midpoint);
+    const secondHalf = nodeChunk.slice(midpoint);
 
     const firstResult = await appendChunkWithRetry({
       parentId,
       afterBlockId,
-      childChunk: firstHalf,
+      nodeChunk: firstHalf,
       token
     });
 
@@ -408,25 +435,54 @@ async function appendChunkWithRetry({ parentId, afterBlockId, childChunk, token 
     return appendChunkWithRetry({
       parentId,
       afterBlockId: firstResult.lastInsertedId,
-      childChunk: secondHalf,
+      nodeChunk: secondHalf,
       token
     });
   }
 }
 
-function buildAppendChunks(children, parentId, initialAfterBlockId) {
+async function appendNestedChildrenForChunk({ nodeChunk, results, token }) {
+  for (let index = 0; index < nodeChunk.length; index += 1) {
+    const node = nodeChunk[index];
+    const childNodes = node.children || [];
+
+    if (!childNodes.length) {
+      continue;
+    }
+
+    const createdBlockIdRaw = results[index]?.id;
+
+    if (!createdBlockIdRaw) {
+      throw new Error("Notion did not return the created block ID for nested content.");
+    }
+
+    const createdBlockId = normalizeNotionId(createdBlockIdRaw);
+
+    await appendNodesToParent({
+      parentId: createdBlockId,
+      afterBlockId: null,
+      nodes: childNodes,
+      token
+    });
+  }
+}
+
+function buildAppendChunks(nodes, parentId, initialAfterBlockId) {
   const chunks = [];
   let currentChunk = [];
   let currentAfterBlockId = initialAfterBlockId;
 
-  for (const child of children) {
+  for (const node of nodes) {
     if (!currentChunk.length) {
-      currentChunk.push(child);
+      currentChunk.push(node);
       continue;
     }
 
-    const candidateChunk = [...currentChunk, child];
-    const body = createAppendBody(candidateChunk, currentAfterBlockId);
+    const candidateChunk = [...currentChunk, node];
+    const body = createAppendBody(
+      candidateChunk.map((entry) => entry.payload),
+      currentAfterBlockId
+    );
     const estimatedBytes = byteLengthUtf8(
       JSON.stringify({
         parentId,
@@ -439,7 +495,7 @@ function buildAppendChunks(children, parentId, initialAfterBlockId) {
       estimatedBytes > REQUEST_BODY_SOFT_LIMIT_BYTES
     ) {
       chunks.push(currentChunk);
-      currentChunk = [child];
+      currentChunk = [node];
       currentAfterBlockId = null;
       continue;
     }
@@ -454,47 +510,54 @@ function buildAppendChunks(children, parentId, initialAfterBlockId) {
   return chunks;
 }
 
-function blockToNotionBlocks(block) {
+function blockToAppendNodes(block) {
   if (!block) {
     return [];
   }
 
   switch (block.type) {
     case "paragraph":
-      return [createRichTextBlock("paragraph", block.children)];
+      return [createAppendNode(createRichTextBlock("paragraph", block.children))];
     case "heading":
-      return [createHeadingBlock(block.level, block.children)];
+      return [createAppendNode(createHeadingBlock(block.level, block.children))];
     case "quote":
-      return [createRichTextBlock("quote", block.children)];
+      return [createAppendNode(createRichTextBlock("quote", block.children))];
     case "code":
-      return [createCodeBlock(block)];
+      return [createAppendNode(createCodeBlock(block))];
     case "equation":
       return [
-        {
+        createAppendNode({
           object: "block",
           type: "equation",
           equation: {
             expression: block.latex || ""
           }
-        }
+        })
       ];
     case "divider":
       return [
-        {
+        createAppendNode({
           object: "block",
           type: "divider",
           divider: {}
-        }
+        })
       ];
     case "image":
-      return [createImageFallbackBlock(block)];
+      return [createAppendNode(createImageFallbackBlock(block))];
     case "list":
-      return block.items.flatMap((item) => createListItemBlock(block.ordered, item));
+      return block.items.map((item) => createListItemNode(block.ordered, item));
     case "table":
-      return [createTableFallbackBlock(block)];
+      return [createAppendNode(createTableFallbackBlock(block))];
     default:
       return [];
   }
+}
+
+function createAppendNode(payload, children = []) {
+  return {
+    payload,
+    children
+  };
 }
 
 function createRichTextBlock(type, children) {
@@ -578,21 +641,32 @@ function createTableFallbackBlock(block) {
   };
 }
 
-function createListItemBlock(ordered, item) {
+function createListItemNode(ordered, item) {
   const type = ordered ? "numbered_list_item" : "bulleted_list_item";
-  const children = blocksToNotionChildren(item.blocks || []);
+  const children = blocksToAppendNodes(item.blocks || []);
 
-  return [
+  return createAppendNode(
     {
       object: "block",
       type,
       [type]: {
         rich_text: inlineChildrenToRichText(item.children || []),
-        color: "default",
-        ...(children.length ? { children } : {})
+        color: "default"
       }
-    }
-  ];
+    },
+    children
+  );
+}
+
+function countAppendNodes(nodes) {
+  let total = 0;
+
+  for (const node of nodes || []) {
+    total += 1;
+    total += countAppendNodes(node.children || []);
+  }
+
+  return total;
 }
 
 function inlineChildrenToRichText(children) {

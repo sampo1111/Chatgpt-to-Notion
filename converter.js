@@ -499,7 +499,7 @@
   }
 
   function compactBlocks(blocks) {
-    return blocks.filter((block) => {
+    return normalizeBlocks(blocks).filter((block) => {
       if (!block) {
         return false;
       }
@@ -530,6 +530,146 @@
 
       return true;
     });
+  }
+
+  function normalizeBlocks(blocks) {
+    const normalized = [];
+
+    for (const block of blocks || []) {
+      normalized.push(...normalizeBlock(block));
+    }
+
+    return normalized;
+  }
+
+  function normalizeBlock(block) {
+    if (!block) {
+      return [];
+    }
+
+    if (block.type !== "list") {
+      return [block];
+    }
+
+    return normalizeListBlock(block);
+  }
+
+  function normalizeListBlock(block) {
+    if (isStructurallyEmptyListBlock(block)) {
+      return [createBulletRunParagraph(countStructurallyEmptyListItems(block), block.ordered)];
+    }
+
+    const normalizedItems = [];
+
+    for (const item of block.items || []) {
+      const normalizedChildren = mergeAdjacentText(item.children || []);
+      const normalizedBlocks = compactBlocks(item.blocks || []);
+      const listBlocks = normalizedBlocks.filter((childBlock) => childBlock.type === "list");
+      const nonListBlocks = normalizedBlocks.filter((childBlock) => childBlock.type !== "list");
+
+      if (
+        !hasMeaningfulInlineChildren(normalizedChildren) &&
+        !nonListBlocks.length &&
+        listBlocks.length === 1 &&
+        listBlocks[0].ordered === block.ordered
+      ) {
+        normalizedItems.push(...listBlocks[0].items);
+        continue;
+      }
+
+      normalizedItems.push({
+        children: normalizedChildren,
+        blocks: normalizedBlocks
+      });
+    }
+
+    return [
+      {
+        ...block,
+        items: normalizedItems.filter(
+          (item) => hasMeaningfulInlineChildren(item.children) || item.blocks?.length
+        )
+      }
+    ];
+  }
+
+  function hasMeaningfulInlineChildren(children) {
+    for (const child of children || []) {
+      if (!child) {
+        continue;
+      }
+
+      if (child.type === "text") {
+        if ((child.text || "").trim()) {
+          return true;
+        }
+        continue;
+      }
+
+      if (child.type === "lineBreak") {
+        continue;
+      }
+
+      if (child.children && hasMeaningfulInlineChildren(child.children)) {
+        return true;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  function isStructurallyEmptyListBlock(block) {
+    return (
+      block?.type === "list" &&
+      Array.isArray(block.items) &&
+      block.items.length > 0 &&
+      block.items.every(isStructurallyEmptyListItem)
+    );
+  }
+
+  function isStructurallyEmptyListItem(item) {
+    if (hasMeaningfulInlineChildren(item?.children)) {
+      return false;
+    }
+
+    const childBlocks = item?.blocks || [];
+    const nonListBlocks = childBlocks.filter((block) => block.type !== "list");
+
+    if (nonListBlocks.length) {
+      return false;
+    }
+
+    return childBlocks.every(isStructurallyEmptyListBlock);
+  }
+
+  function countStructurallyEmptyListItems(block) {
+    let count = 0;
+
+    for (const item of block.items || []) {
+      count += 1;
+
+      for (const childBlock of item.blocks || []) {
+        if (childBlock.type === "list") {
+          count += countStructurallyEmptyListItems(childBlock);
+        }
+      }
+    }
+
+    return count;
+  }
+
+  function createBulletRunParagraph(count, ordered) {
+    const safeCount = Math.max(Number(count) || 0, 1);
+    const text = ordered
+      ? Array.from({ length: safeCount }, (_, index) => `${index + 1}.`).join(" ")
+      : Array.from({ length: safeCount }, () => "•").join(" ");
+
+    return {
+      type: "paragraph",
+      children: [{ type: "text", text }]
+    };
   }
 
   function mergeAdjacentText(parts) {
