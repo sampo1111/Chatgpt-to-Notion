@@ -5,6 +5,8 @@
   const tokenStatus = document.getElementById("token-status");
   const copyStatus = document.getElementById("copy-status");
   const connectionStatus = document.getElementById("connection-status");
+  const enableCopyButtonInput = document.getElementById("enable-copy-button");
+  const enableNotionPasteInput = document.getElementById("enable-notion-paste");
 
   async function boot() {
     await refreshStatus();
@@ -15,6 +17,14 @@
 
     testButton.addEventListener("click", async () => {
       await testConnection();
+    });
+
+    enableCopyButtonInput.addEventListener("change", async () => {
+      await saveUiSettings();
+    });
+
+    enableNotionPasteInput.addEventListener("change", async () => {
+      await saveUiSettings();
     });
   }
 
@@ -31,6 +41,9 @@
     } else {
       tokenStatus.textContent = "Token: not saved";
     }
+
+    enableCopyButtonInput.checked = settings?.enableCopyButton !== false;
+    enableNotionPasteInput.checked = settings?.enableNotionPaste !== false;
 
     if (copySummary?.ok && copySummary.hasLastCopy) {
       const copiedAt = new Date(copySummary.copiedAt).toLocaleString();
@@ -88,10 +101,38 @@
     }
   }
 
+  async function saveUiSettings() {
+    setBusy(true);
+    connectionStatus.textContent = "Connection: saving options...";
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "saveUiSettings",
+        settings: {
+          enableCopyButton: enableCopyButtonInput.checked,
+          enableNotionPaste: enableNotionPasteInput.checked
+        }
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "Could not save the options.");
+      }
+
+      connectionStatus.textContent = "Connection: options saved";
+      await refreshStatus();
+    } catch (error) {
+      connectionStatus.textContent = `Connection: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function setBusy(busy) {
     saveButton.disabled = busy;
     testButton.disabled = busy;
     tokenInput.disabled = busy;
+    enableCopyButtonInput.disabled = busy;
+    enableNotionPasteInput.disabled = busy;
   }
 
   void boot();

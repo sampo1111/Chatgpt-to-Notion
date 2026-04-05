@@ -1,4 +1,5 @@
 (function () {
+  const SETTINGS_KEY = "chatgptToNotionSettings";
   const TEXT_PAYLOAD_HEADER = "[[CHATGPT_TO_NOTION]]";
   const HIDDEN_PAYLOAD_START = "\u2063\u2063\u2063";
   const HIDDEN_PAYLOAD_END = "\u2064\u2064\u2064";
@@ -10,10 +11,15 @@
   ].join(", ");
   const CONTENT_SELECTOR = [".markdown", "[class*='markdown']", "[data-testid='conversation-turn-content']"].join(", ");
   const PROCESSED_ATTRIBUTE = "data-chatgpt-to-notion-processed";
+  let uiState = {
+    enableCopyButton: true
+  };
 
-  function boot() {
+  async function boot() {
+    await loadUiState();
     injectButtons();
     observeConversation();
+    observeSettings();
   }
 
   function observeConversation() {
@@ -28,6 +34,11 @@
   }
 
   function injectButtons() {
+    if (!uiState.enableCopyButton) {
+      removeCopyButtons();
+      return;
+    }
+
     const messages = document.querySelectorAll(MESSAGE_SELECTOR);
 
     for (const message of messages) {
@@ -57,6 +68,31 @@
       anchor.appendChild(createCopyButton(contentRoot));
       message.setAttribute(PROCESSED_ATTRIBUTE, "true");
     }
+  }
+
+  function observeSettings() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes[SETTINGS_KEY]) {
+        return;
+      }
+
+      const nextSettings = changes[SETTINGS_KEY].newValue || {};
+      uiState.enableCopyButton = nextSettings.enableCopyButton !== false;
+      injectButtons();
+    });
+  }
+
+  async function loadUiState() {
+    const stored = await chrome.storage.local.get([SETTINGS_KEY]);
+    const settings = stored[SETTINGS_KEY] || {};
+    uiState.enableCopyButton = settings.enableCopyButton !== false;
+  }
+
+  function removeCopyButtons() {
+    document.querySelectorAll("[data-chatgpt-to-notion-button]").forEach((button) => button.remove());
+    document.querySelectorAll(`[${PROCESSED_ATTRIBUTE}]`).forEach((message) => {
+      message.removeAttribute(PROCESSED_ATTRIBUTE);
+    });
   }
 
   function isAssistantMessage(message) {
@@ -269,5 +305,5 @@
     return /Extension context invalidated/i.test(String(error?.message || error));
   }
 
-  boot();
+  void boot();
 })();

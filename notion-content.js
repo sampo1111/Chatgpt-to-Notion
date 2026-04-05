@@ -1,4 +1,5 @@
 (function () {
+  const SETTINGS_KEY = "chatgptToNotionSettings";
   const BUTTON_ID = "chatgpt-to-notion-paste-button";
   const TOAST_ID = "chatgpt-to-notion-toast";
   const TEXT_PAYLOAD_HEADER = "[[CHATGPT_TO_NOTION]]";
@@ -11,13 +12,18 @@
     blockId: null
   };
   let suppressNativePasteUntil = 0;
+  let uiState = {
+    enableNotionPaste: true
+  };
 
-  function boot() {
+  async function boot() {
+    await loadUiState();
     injectPasteButton();
     observePage();
     registerCursorTracking();
     registerBeforeInputSuppression();
     registerPasteHandler();
+    observeSettings();
   }
 
   function observePage() {
@@ -32,6 +38,11 @@
   }
 
   function injectPasteButton() {
+    if (!uiState.enableNotionPaste) {
+      removePasteButton();
+      return;
+    }
+
     if (document.getElementById(BUTTON_ID)) {
       return;
     }
@@ -53,6 +64,10 @@
     document.addEventListener(
       "paste",
       async (event) => {
+        if (!uiState.enableNotionPaste) {
+          return;
+        }
+
         updateCursorContext();
         const payload = extractPayloadFromClipboard(event);
 
@@ -73,6 +88,10 @@
     document.addEventListener(
       "beforeinput",
       (event) => {
+        if (!uiState.enableNotionPaste) {
+          return;
+        }
+
         if (!isPasteLikeInput(event)) {
           return;
         }
@@ -97,6 +116,28 @@
     document.addEventListener("click", update, true);
     document.addEventListener("keyup", update, true);
     updateCursorContext();
+  }
+
+  function observeSettings() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes[SETTINGS_KEY]) {
+        return;
+      }
+
+      const nextSettings = changes[SETTINGS_KEY].newValue || {};
+      uiState.enableNotionPaste = nextSettings.enableNotionPaste !== false;
+      injectPasteButton();
+    });
+  }
+
+  async function loadUiState() {
+    const stored = await chrome.storage.local.get([SETTINGS_KEY]);
+    const settings = stored[SETTINGS_KEY] || {};
+    uiState.enableNotionPaste = settings.enableNotionPaste !== false;
+  }
+
+  function removePasteButton() {
+    document.getElementById(BUTTON_ID)?.remove();
   }
 
   function updateCursorContext() {
@@ -1064,5 +1105,5 @@
     return match ? match[0].length : 0;
   }
 
-  boot();
+  void boot();
 })();

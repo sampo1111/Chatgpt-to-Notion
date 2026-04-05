@@ -12,6 +12,11 @@ const DEFAULT_ANNOTATIONS = {
   code: false,
   color: "default"
 };
+const DEFAULT_SETTINGS = {
+  notionToken: "",
+  enableCopyButton: true,
+  enableNotionPaste: true
+};
 const SUPPORTED_CODE_LANGUAGES = new Set([
   "abap",
   "arduino",
@@ -107,6 +112,8 @@ async function handleMessage(message) {
       return saveNotionSettings(message.token || "");
     case "getNotionSettings":
       return getNotionSettings();
+    case "saveUiSettings":
+      return saveUiSettings(message.settings || {});
     case "testNotionConnection":
       return testNotionConnection(message.token);
     case "appendBlocksToNotionPage":
@@ -126,9 +133,11 @@ async function handleMessage(message) {
 
 async function saveNotionSettings(token) {
   const trimmedToken = token.trim();
+  const currentSettings = await readSettings();
 
   await chrome.storage.local.set({
     [SETTINGS_KEY]: {
+      ...currentSettings,
       notionToken: trimmedToken
     }
   });
@@ -143,7 +152,27 @@ async function getNotionSettings() {
   const settings = await readSettings();
   return {
     hasToken: Boolean(settings.notionToken),
-    maskedToken: maskToken(settings.notionToken)
+    maskedToken: maskToken(settings.notionToken),
+    enableCopyButton: settings.enableCopyButton,
+    enableNotionPaste: settings.enableNotionPaste
+  };
+}
+
+async function saveUiSettings(nextSettings) {
+  const currentSettings = await readSettings();
+  const mergedSettings = {
+    ...currentSettings,
+    ...sanitizeUiSettings(nextSettings)
+  };
+
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: mergedSettings
+  });
+
+  return {
+    saved: true,
+    enableCopyButton: mergedSettings.enableCopyButton,
+    enableNotionPaste: mergedSettings.enableNotionPaste
   };
 }
 
@@ -265,7 +294,23 @@ async function notionFetch(path, options) {
 
 async function readSettings() {
   const stored = await chrome.storage.local.get([SETTINGS_KEY]);
-  return stored[SETTINGS_KEY] || {};
+  return {
+    ...DEFAULT_SETTINGS,
+    ...(stored[SETTINGS_KEY] || {})
+  };
+}
+
+function sanitizeUiSettings(settings) {
+  return {
+    enableCopyButton:
+      settings.enableCopyButton === undefined
+        ? DEFAULT_SETTINGS.enableCopyButton
+        : Boolean(settings.enableCopyButton),
+    enableNotionPaste:
+      settings.enableNotionPaste === undefined
+        ? DEFAULT_SETTINGS.enableNotionPaste
+        : Boolean(settings.enableNotionPaste)
+  };
 }
 
 async function resolveAppendTarget({ pageId, anchorBlockId, token }) {
