@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AI to Notion",
+  "name": "Chatgpt to Notion",
   "description": "Move ChatGPT and Gemini answers into Notion with native inline equations and equation blocks.",
   "version": "0.3.0",
   "permissions": [
@@ -51,7 +51,7 @@
     }
   ],
   "action": {
-    "default_title": "AI to Notion",
+    "default_title": "Chatgpt to Notion",
     "default_popup": "popup.html"
   }
 }
