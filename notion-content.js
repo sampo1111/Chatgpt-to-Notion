@@ -2,6 +2,7 @@
   const SETTINGS_KEY = "chatgptToNotionSettings";
   const BUTTON_ID = "chatgpt-to-notion-paste-button";
   const TOAST_ID = "chatgpt-to-notion-toast";
+  const DEFAULT_PASTE_BUTTON_TEXT = "Paste to Notion";
   const TEXT_PAYLOAD_HEADER = "[[CHATGPT_TO_NOTION]]";
   const HIDDEN_PAYLOAD_START = "\u2063\u2063\u2063";
   const HIDDEN_PAYLOAD_END = "\u2064\u2064\u2064";
@@ -53,7 +54,7 @@
     button.id = BUTTON_ID;
     button.type = "button";
     button.className = "chatgpt-to-notion-floating-button";
-    button.textContent = "Paste ChatGPT";
+    button.textContent = DEFAULT_PASTE_BUTTON_TEXT;
 
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -455,7 +456,7 @@
     button.disabled = false;
     button.dataset.busy = busy ? "true" : "false";
     button.setAttribute("aria-busy", busy ? "true" : "false");
-    button.textContent = busy ? "Pasting... Click to cancel" : "Paste ChatGPT";
+    button.textContent = busy ? "Pasting... Click to cancel" : DEFAULT_PASTE_BUTTON_TEXT;
   }
 
   async function runPasteOperation(button, operation) {

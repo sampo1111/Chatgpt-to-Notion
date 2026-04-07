@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ChatGPT to Notion</title>
+    <title>AI to Notion</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main class="popup">
-      <h1>ChatGPT to Notion</h1>
-      <p class="lead">Notion 토큰을 저장한 뒤, ChatGPT에서 복사하고 Notion에서 붙여넣으세요.</p>
+      <h1>AI to Notion</h1>
+      <p class="lead">ChatGPT 또는 Gemini에서 복사하고 Notion에 붙여넣을 수 있도록 도와주는 확장입니다.</p>
 
       <label class="field">
         <span>Notion Integration Token</span>
@@ -19,8 +19,8 @@
       <section class="toggles">
         <label class="toggle-row">
           <span>
-            <strong>ChatGPT 복사 버튼</strong>
-            <small>ChatGPT 답변 옆의 `Copy for Notion` 버튼 표시</small>
+            <strong>복사 버튼</strong>
+            <small>ChatGPT/Gemini 답변 옆의 Copy 버튼 표시</small>
           </span>
           <span class="toggle-switch">
             <input id="enable-copy-button" type="checkbox">
@@ -31,7 +31,7 @@
         <label class="toggle-row">
           <span>
             <strong>Notion 붙여넣기 기능</strong>
-            <small>Notion의 `Paste ChatGPT` 버튼과 붙여넣기 가로채기 활성화</small>
+            <small>Paste 버튼과 붙여넣기 가로채기 활성화</small>
           </span>
           <span class="toggle-switch">
             <input id="enable-notion-paste" type="checkbox">
@@ -47,15 +47,15 @@
 
       <section class="status">
         <div id="token-status">토큰: 저장되지 않음</div>
-        <div id="copy-status">최근 ChatGPT 캡처: 없음</div>
-        <div id="connection-status">연결 상태: 미확인</div>
+        <div id="copy-status">최근 캡처: 없음</div>
+        <div id="connection-status">상태: 미확인</div>
       </section>
 
       <section class="notes">
-        <p>1. Notion Integration을 생성합니다.</p>
+        <p>1. Notion Integration을 만들고 토큰을 저장합니다.</p>
         <p>2. 대상 페이지를 해당 Integration과 공유합니다.</p>
-        <p>3. ChatGPT에서 <strong>Copy for Notion</strong>을 누릅니다.</p>
-        <p>4. Notion에서 붙여넣거나 <strong>Paste ChatGPT</strong>를 누릅니다.</p>
+        <p>3. ChatGPT 또는 Gemini에서 답변을 복사합니다.</p>
+        <p>4. Notion에서 붙여넣거나 Paste to Notion 버튼을 누릅니다.</p>
       </section>
     </main>
 

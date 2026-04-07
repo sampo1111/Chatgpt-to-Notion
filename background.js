@@ -207,7 +207,7 @@ async function appendStoredBlocksToNotionPage(pageId, anchorBlockId, operationId
   const lastCopy = stored[LAST_COPY_KEY];
 
   if (!lastCopy?.blocks?.length) {
-    throw new Error("No captured ChatGPT reply found. Copy from ChatGPT first.");
+    throw new Error("No captured AI reply found. Copy from ChatGPT or Gemini first.");
   }
 
   return appendBlocksToNotionPage({
@@ -278,7 +278,9 @@ async function getLastCopySummary() {
   return {
     hasLastCopy: Boolean(lastCopy?.blocks?.length),
     copiedAt: lastCopy?.copiedAt || null,
-    blockCount: lastCopy?.blocks?.length || 0
+    blockCount: lastCopy?.blocks?.length || 0,
+    source: lastCopy?.source || null,
+    sourceLabel: lastCopy?.sourceLabel || null
   };
 }
 

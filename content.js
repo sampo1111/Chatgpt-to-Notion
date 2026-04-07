@@ -5,20 +5,18 @@
   const HIDDEN_PAYLOAD_END = "\u2064\u2064\u2064";
   const HIDDEN_ZERO = "\u200b";
   const HIDDEN_ONE = "\u200c";
-  const MESSAGE_SELECTOR = [
-    "[data-message-author-role='assistant']",
-    "article[data-testid^='conversation-turn-']"
-  ].join(", ");
-  const CONTENT_SELECTOR = [".markdown", "[class*='markdown']", "[data-testid='conversation-turn-content']"].join(", ");
   const MATH_SELECTOR = [
     ".katex",
     ".katex-display",
+    "mjx-container",
+    "math",
     "[data-testid='inline-math']",
     "[data-testid='display-math']",
     "[data-display='true']"
   ].join(", ");
   const SELECTION_BUTTON_ID = "chatgpt-to-notion-selection-button";
   const PROCESSED_ATTRIBUTE = "data-chatgpt-to-notion-processed";
+  const provider = window.AIToNotionSourceProviders?.resolveCurrentProvider?.() || null;
   let uiState = {
     enableCopyButton: true
   };
@@ -26,6 +24,10 @@
   let selectionSyncScheduled = false;
 
   async function boot() {
+    if (!provider) {
+      return;
+    }
+
     await loadUiState();
     injectButtons();
     observeConversation();
@@ -52,7 +54,7 @@
       return;
     }
 
-    const messages = document.querySelectorAll(MESSAGE_SELECTOR);
+    const messages = provider.getMessageRoots();
 
     for (const message of messages) {
       if (isWrapperForAssistant(message)) {
@@ -129,40 +131,19 @@
   }
 
   function isAssistantMessage(message) {
-    const role = message.getAttribute("data-message-author-role");
-    if (role === "assistant") {
-      return true;
-    }
-
-    return message.querySelector("[data-message-author-role='assistant']") !== null;
+    return provider?.isAssistantMessage?.(message) === true;
   }
 
   function isWrapperForAssistant(message) {
-    return (
-      message.getAttribute("data-message-author-role") !== "assistant" &&
-      message.querySelector("[data-message-author-role='assistant']") !== null
-    );
+    return provider?.isWrapperForAssistant?.(message) === true;
   }
 
   function getContentRoot(message) {
-    if (message.matches(CONTENT_SELECTOR)) {
-      return message;
-    }
-
-    return message.querySelector(CONTENT_SELECTOR);
+    return provider?.getContentRoot?.(message) || null;
   }
 
   function findButtonAnchor(message, contentRoot) {
-    const actionBar =
-      message.querySelector("[data-testid='conversation-turn-actions']") ||
-      message.querySelector("[data-testid='turn-actions']") ||
-      message.querySelector("footer");
-
-    if (actionBar) {
-      return actionBar;
-    }
-
-    return contentRoot.parentElement || message;
+    return provider?.findButtonAnchor?.(message, contentRoot) || contentRoot?.parentElement || message;
   }
 
   function ensureAnchorPosition(anchor) {
@@ -198,6 +179,8 @@
 
         const payload = {
           copiedAt: new Date().toISOString(),
+          source: provider?.id || "unknown",
+          sourceLabel: provider?.label || "AI",
           blocks: result.blocks,
           markdown: result.markdown
         };
@@ -401,6 +384,8 @@
 
     const payload = {
       copiedAt: new Date().toISOString(),
+      source: provider?.id || "unknown",
+      sourceLabel: provider?.label || "AI",
       blocks: result.blocks,
       markdown: result.markdown
     };
@@ -427,7 +412,8 @@
       return null;
     }
 
-    if (!contentRoot.closest(MESSAGE_SELECTOR) || !isAssistantMessage(contentRoot.closest(MESSAGE_SELECTOR))) {
+    const messageRoot = provider?.getMessageRootForNode?.(contentRoot);
+    if (!messageRoot || !isAssistantMessage(messageRoot)) {
       return null;
     }
 
@@ -442,8 +428,7 @@
   }
 
   function closestContentRoot(node) {
-    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-    return element?.closest?.(CONTENT_SELECTOR) || null;
+    return provider?.closestContentRoot?.(node) || null;
   }
 
   function selectionTouchesMath(range, contentRoot) {
@@ -537,6 +522,8 @@
       await chrome.storage.local.set({
         chatgptToNotionLastCopy: {
           copiedAt: payload.copiedAt,
+          source: payload.source || provider?.id || "unknown",
+          sourceLabel: payload.sourceLabel || provider?.label || "AI",
           markdown: result.markdown,
           html: result.html,
           blocks: result.blocks
@@ -544,7 +531,7 @@
       });
     } catch (error) {
       if (isExtensionContextInvalidated(error)) {
-        showToast("Extension updated. Reloading this ChatGPT tab...");
+        showToast(`Extension updated. Reloading this ${provider?.label || "source"} tab...`);
         window.setTimeout(() => {
           window.location.reload();
         }, 600);

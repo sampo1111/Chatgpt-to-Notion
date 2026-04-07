@@ -1005,7 +1005,27 @@
       return false;
     }
 
-    const selector = ".katex-display, p, pre, ul, ol, table, blockquote, hr, h1, h2, h3, h4, h5, h6, figure, img";
+    const selector = [
+      ".katex-display",
+      "mjx-container[display='true']",
+      "math[display='block']",
+      "math[display='true']",
+      "p",
+      "pre",
+      "ul",
+      "ol",
+      "table",
+      "blockquote",
+      "hr",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "figure",
+      "img"
+    ].join(", ");
     const descendants = element.querySelectorAll(selector);
 
     for (const descendant of descendants) {
@@ -1022,7 +1042,11 @@
   }
 
   function hasDisplayMathDescendant(element) {
-    return Boolean(element?.querySelector?.(".katex-display"));
+    return Boolean(
+      element?.querySelector?.(
+        ".katex-display, mjx-container[display='true'], math[display='block'], math[display='true']"
+      )
+    );
   }
 
   function isDisplayMathElement(element) {
@@ -1030,7 +1054,9 @@
       element &&
         element.nodeType === Node.ELEMENT_NODE &&
         (element.classList.contains("katex-display") ||
-          element.matches("[data-testid='display-math'], [data-display='true']"))
+          element.matches(
+            "[data-testid='display-math'], [data-display='true'], mjx-container[display='true'], math[display='block'], math[display='true']"
+          ))
     );
   }
 
@@ -1038,8 +1064,9 @@
     return Boolean(
       element &&
         element.nodeType === Node.ELEMENT_NODE &&
-        (element.classList.contains("katex") || element.matches("[data-testid='inline-math']")) &&
-        !element.closest(".katex-display")
+        (element.classList.contains("katex") ||
+          element.matches("[data-testid='inline-math'], mjx-container, math")) &&
+        !element.closest(".katex-display, mjx-container[display='true'], math[display='block'], math[display='true']")
     );
   }
 
@@ -1049,10 +1076,13 @@
   }
 
   function extractLatex(element) {
-    const annotation = element.querySelector("annotation[encoding='application/x-tex']");
+    const annotation = element.querySelector(
+      "annotation[encoding='application/x-tex'], annotation[encoding='application/x-tex; mode=display']"
+    );
     const source =
       annotation?.textContent ||
       element.getAttribute("data-latex") ||
+      element.getAttribute("alttext") ||
       element.getAttribute("aria-label") ||
       "";
 

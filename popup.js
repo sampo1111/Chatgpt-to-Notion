@@ -37,9 +37,9 @@
     });
 
     if (settings?.ok && settings.hasToken) {
-      tokenStatus.textContent = `Token: saved (${settings.maskedToken})`;
+      tokenStatus.textContent = `토큰: 저장됨 (${settings.maskedToken})`;
     } else {
-      tokenStatus.textContent = "Token: not saved";
+      tokenStatus.textContent = "토큰: 저장되지 않음";
     }
 
     enableCopyButtonInput.checked = settings?.enableCopyButton !== false;
@@ -47,15 +47,16 @@
 
     if (copySummary?.ok && copySummary.hasLastCopy) {
       const copiedAt = new Date(copySummary.copiedAt).toLocaleString();
-      copyStatus.textContent = `Last ChatGPT capture: ${copySummary.blockCount} block(s) at ${copiedAt}`;
+      const sourceLabel = copySummary.sourceLabel || "AI";
+      copyStatus.textContent = `최근 캡처: ${sourceLabel} ${copySummary.blockCount}개 블록 (${copiedAt})`;
     } else {
-      copyStatus.textContent = "Last ChatGPT capture: none";
+      copyStatus.textContent = "최근 캡처: 없음";
     }
   }
 
   async function saveToken() {
     setBusy(true);
-    connectionStatus.textContent = "Connection: saving...";
+    connectionStatus.textContent = "상태: 저장 중...";
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -64,16 +65,16 @@
       });
 
       if (!response?.ok) {
-        throw new Error(response?.error || "Could not save the token.");
+        throw new Error(response?.error || "토큰을 저장하지 못했습니다.");
       }
 
       connectionStatus.textContent = response.hasToken
-        ? "Connection: token saved"
-        : "Connection: token cleared";
+        ? "상태: 토큰 저장됨"
+        : "상태: 토큰 삭제됨";
 
       await refreshStatus();
     } catch (error) {
-      connectionStatus.textContent = `Connection: ${error instanceof Error ? error.message : String(error)}`;
+      connectionStatus.textContent = `상태: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       setBusy(false);
     }
@@ -81,7 +82,7 @@
 
   async function testConnection() {
     setBusy(true);
-    connectionStatus.textContent = "Connection: testing...";
+    connectionStatus.textContent = "상태: 연결 테스트 중...";
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -90,12 +91,12 @@
       });
 
       if (!response?.ok) {
-        throw new Error(response?.error || "Connection test failed.");
+        throw new Error(response?.error || "연결 테스트에 실패했습니다.");
       }
 
-      connectionStatus.textContent = `Connection: ok (${response.botName})`;
+      connectionStatus.textContent = `상태: 연결됨 (${response.botName})`;
     } catch (error) {
-      connectionStatus.textContent = `Connection: ${error instanceof Error ? error.message : String(error)}`;
+      connectionStatus.textContent = `상태: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       setBusy(false);
     }
@@ -103,7 +104,7 @@
 
   async function saveUiSettings() {
     setBusy(true);
-    connectionStatus.textContent = "Connection: saving options...";
+    connectionStatus.textContent = "상태: 옵션 저장 중...";
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -115,13 +116,13 @@
       });
 
       if (!response?.ok) {
-        throw new Error(response?.error || "Could not save the options.");
+        throw new Error(response?.error || "옵션을 저장하지 못했습니다.");
       }
 
-      connectionStatus.textContent = "Connection: options saved";
+      connectionStatus.textContent = "상태: 옵션 저장됨";
       await refreshStatus();
     } catch (error) {
-      connectionStatus.textContent = `Connection: ${error instanceof Error ? error.message : String(error)}`;
+      connectionStatus.textContent = `상태: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       setBusy(false);
     }
