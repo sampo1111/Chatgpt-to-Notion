@@ -1,4 +1,4 @@
-# AI to Notion
+# Chatgpt to Notion
 
 ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제를 줄여 주는 크롬 확장 프로그램입니다.
 
