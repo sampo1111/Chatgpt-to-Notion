@@ -216,47 +216,41 @@
       );
     },
     mountButton({ owner, anchor, button, contentRoot }) {
-      const slotOwner = owner || anchor;
+      const slotOwner =
+        (contentRoot instanceof Element ? contentRoot.parentElement : null) || owner || anchor || contentRoot;
+
       if (!slotOwner) {
         anchor?.appendChild?.(button);
         return button;
       }
 
-      const referenceNode = anchor instanceof Element ? anchor : null;
-      const insertionParent = referenceNode?.parentElement || slotOwner;
-      let slot = slotOwner.querySelector("[data-ai-to-notion-action-slot='gemini']");
+      let slot =
+        slotOwner.querySelector?.("[data-ai-to-notion-action-slot='gemini']") ||
+        owner?.querySelector?.("[data-ai-to-notion-action-slot='gemini']") ||
+        null;
+
       if (!slot) {
         slot = document.createElement("div");
-        slot.className = "chatgpt-to-notion-action-slot";
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--gemini";
         slot.setAttribute("data-ai-to-notion-action-slot", "gemini");
+      } else {
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--gemini";
       }
 
-      if (referenceNode && insertionParent) {
-        if (slot.parentElement !== insertionParent || slot.nextSibling !== referenceNode) {
-          insertionParent.insertBefore(slot, referenceNode);
+      slot.style.marginLeft = "";
+      slot.style.width = "";
+      slot.style.maxWidth = "";
+
+      if (contentRoot instanceof Element && contentRoot.parentElement === slotOwner) {
+        if (slot.parentElement !== slotOwner || slot.previousSibling !== contentRoot) {
+          slotOwner.insertBefore(slot, contentRoot.nextSibling);
         }
       } else if (slot.parentElement !== slotOwner) {
         slotOwner.appendChild(slot);
       }
 
-      if (referenceNode && insertionParent) {
-        const parentRect = insertionParent.getBoundingClientRect();
-        const contentRect = contentRoot instanceof Element ? contentRoot.getBoundingClientRect() : null;
-        const referenceRect = contentRect || referenceNode.getBoundingClientRect();
-        const offsetLeft = Math.max(0, Math.round(referenceRect.left - parentRect.left));
-        const contentWidth = Math.max(0, Math.round(referenceRect.width));
-
-        slot.style.marginLeft = offsetLeft > 0 ? `${offsetLeft}px` : "";
-        slot.style.width = contentWidth > 0 ? `${contentWidth}px` : "";
-        slot.style.maxWidth = offsetLeft > 0 ? `calc(100% - ${offsetLeft}px)` : "100%";
-      } else {
-        slot.style.marginLeft = "";
-        slot.style.width = "";
-        slot.style.maxWidth = "";
-      }
-
       button.classList.add("chatgpt-to-notion-button--wide");
-      slot.appendChild(button);
+      slot.replaceChildren(button);
       return button;
     }
   });
