@@ -18,10 +18,14 @@
   const PROCESSED_ATTRIBUTE = "data-chatgpt-to-notion-processed";
   const provider = window.AIToNotionSourceProviders?.resolveCurrentProvider?.() || null;
   let uiState = {
-    enableCopyButton: true
+    enableFeature: true,
+    enableCopyButton: true,
+    buttonScale: 1
   };
   let selectionCopyContext = null;
   let selectionSyncScheduled = false;
+  let buttonInjectionScheduled = false;
+  let pendingMessageRoots = new Set();
 
   async function boot() {
     if (!provider) {
@@ -29,6 +33,7 @@
     }
 
     await loadUiState();
+    applyButtonScale();
     injectButtons();
     observeConversation();
     observeSettings();
@@ -37,9 +42,10 @@
   }
 
   function observeConversation() {
-    const observer = new MutationObserver(() => {
-      injectButtons();
-      syncSelectionCopyButton();
+    const observer = new MutationObserver((records) => {
+      queueMessageRoots(collectMessageRootsFromMutations(records));
+      scheduleButtonInjection();
+      scheduleSelectionCopyButtonSync();
     });
 
     observer.observe(document.body, {
@@ -48,40 +54,16 @@
     });
   }
 
-  function injectButtons() {
-    if (!uiState.enableCopyButton) {
+  function injectButtons(messageRoots) {
+    if (!uiState.enableFeature || !uiState.enableCopyButton) {
       removeCopyButtons();
       return;
     }
 
-    const messages = provider.getMessageRoots();
+    const messages = normalizeMessageRoots(messageRoots || provider.getMessageRoots());
 
     for (const message of messages) {
-      if (isWrapperForAssistant(message)) {
-        continue;
-      }
-
-      if (!isAssistantMessage(message)) {
-        continue;
-      }
-
-      if (message.hasAttribute(PROCESSED_ATTRIBUTE)) {
-        continue;
-      }
-
-      const contentRoot = getContentRoot(message);
-      if (!contentRoot) {
-        continue;
-      }
-
-      const anchor = findButtonAnchor(message, contentRoot);
-      if (!anchor) {
-        continue;
-      }
-
-      ensureAnchorPosition(anchor);
-      anchor.appendChild(createCopyButton(contentRoot));
-      message.setAttribute(PROCESSED_ATTRIBUTE, "true");
+      injectButtonIntoMessage(message);
     }
   }
 
@@ -92,9 +74,12 @@
       }
 
       const nextSettings = changes[SETTINGS_KEY].newValue || {};
+      uiState.enableFeature = resolveFeatureEnabled(nextSettings);
       uiState.enableCopyButton = nextSettings.enableCopyButton !== false;
+      uiState.buttonScale = normalizeButtonScale(nextSettings.buttonScale);
+      applyButtonScale();
       injectButtons();
-      syncSelectionCopyButton();
+      scheduleSelectionCopyButtonSync();
     });
   }
 
@@ -119,11 +104,45 @@
   async function loadUiState() {
     const stored = await chrome.storage.local.get([SETTINGS_KEY]);
     const settings = stored[SETTINGS_KEY] || {};
+    uiState.enableFeature = resolveFeatureEnabled(settings);
     uiState.enableCopyButton = settings.enableCopyButton !== false;
+    uiState.buttonScale = normalizeButtonScale(settings.buttonScale);
+  }
+
+  function resolveFeatureEnabled(settings) {
+    if (settings?.enableFeature !== undefined) {
+      return settings.enableFeature !== false;
+    }
+
+    if (settings?.enableNotionPaste !== undefined) {
+      return settings.enableNotionPaste !== false;
+    }
+
+    return true;
+  }
+
+  function applyButtonScale() {
+    document.documentElement.style.setProperty("--ai-to-notion-button-scale", String(uiState.buttonScale));
+  }
+
+  function normalizeButtonScale(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return 1;
+    }
+
+    return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
   }
 
   function removeCopyButtons() {
     document.querySelectorAll("[data-chatgpt-to-notion-button]").forEach((button) => button.remove());
+    document
+      .querySelectorAll("[data-ai-to-notion-action-slot]")
+      .forEach((slot) => {
+        if (!slot.querySelector("[data-chatgpt-to-notion-button]")) {
+          slot.remove();
+        }
+      });
     document.querySelectorAll(`[${PROCESSED_ATTRIBUTE}]`).forEach((message) => {
       message.removeAttribute(PROCESSED_ATTRIBUTE);
     });
@@ -142,8 +161,81 @@
     return provider?.getContentRoot?.(message) || null;
   }
 
-  function findButtonAnchor(message, contentRoot) {
-    return provider?.findButtonAnchor?.(message, contentRoot) || contentRoot?.parentElement || message;
+  function getButtonOwner(message, contentRoot) {
+    return provider?.getButtonOwner?.(message, contentRoot) || message || contentRoot || null;
+  }
+
+  function findButtonAnchor(message, contentRoot, owner) {
+    return provider?.findButtonAnchor?.(message, contentRoot, owner) || contentRoot?.parentElement || owner || message;
+  }
+
+  function scheduleButtonInjection() {
+    if (buttonInjectionScheduled) {
+      return;
+    }
+
+    buttonInjectionScheduled = true;
+    window.requestAnimationFrame(() => {
+      buttonInjectionScheduled = false;
+      const queuedRoots = Array.from(pendingMessageRoots);
+      pendingMessageRoots.clear();
+      injectButtons(queuedRoots.length ? queuedRoots : undefined);
+    });
+  }
+
+  function queueMessageRoots(messages) {
+    for (const message of normalizeMessageRoots(messages)) {
+      pendingMessageRoots.add(message);
+    }
+  }
+
+  function collectMessageRootsFromMutations(records) {
+    const messages = [];
+
+    for (const record of records || []) {
+      for (const node of record.addedNodes || []) {
+        messages.push(...collectMessageRootsFromNode(node));
+      }
+    }
+
+    return messages;
+  }
+
+  function collectMessageRootsFromNode(node) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    if (!element) {
+      return [];
+    }
+
+    const roots = [];
+    const directRoot = provider?.getMessageRootForNode?.(element);
+    if (directRoot) {
+      roots.push(directRoot);
+    }
+
+    if (provider?.getMessageRootsInSubtree) {
+      roots.push(...provider.getMessageRootsInSubtree(element));
+    }
+
+    return normalizeMessageRoots(roots);
+  }
+
+  function normalizeMessageRoots(messages) {
+    const unique = [];
+    const seen = new Set();
+
+    for (const message of messages || []) {
+      if (!(message instanceof Element) || seen.has(message)) {
+        continue;
+      }
+
+      seen.add(message);
+      unique.push(message);
+    }
+
+    return unique.filter(
+      (message, _, all) => !all.some((other) => other !== message && other.contains(message))
+    );
   }
 
   function ensureAnchorPosition(anchor) {
@@ -151,6 +243,51 @@
     if (currentPosition === "static") {
       anchor.style.position = "relative";
     }
+  }
+
+  function injectButtonIntoMessage(message) {
+    if (isWrapperForAssistant(message)) {
+      return;
+    }
+
+    if (!isAssistantMessage(message)) {
+      return;
+    }
+
+    if (message.hasAttribute(PROCESSED_ATTRIBUTE)) {
+      return;
+    }
+
+    const contentRoot = getContentRoot(message);
+    if (!contentRoot) {
+      return;
+    }
+
+    const owner = getButtonOwner(message, contentRoot);
+    if (!owner) {
+      return;
+    }
+
+    if (owner.querySelector?.("[data-chatgpt-to-notion-button]")) {
+      message.setAttribute(PROCESSED_ATTRIBUTE, "true");
+      return;
+    }
+
+    const anchor = findButtonAnchor(message, contentRoot, owner);
+    if (!anchor) {
+      return;
+    }
+
+    ensureAnchorPosition(anchor);
+    const button = createCopyButton(contentRoot);
+    provider?.mountButton?.({
+      message,
+      contentRoot,
+      owner,
+      anchor,
+      button
+    });
+    message.setAttribute(PROCESSED_ATTRIBUTE, "true");
   }
 
   function createCopyButton(contentRoot) {
@@ -218,7 +355,7 @@
   }
 
   function syncSelectionCopyButton() {
-    if (!uiState.enableCopyButton || document.hidden || !document.hasFocus()) {
+    if (!uiState.enableFeature || !uiState.enableCopyButton || document.hidden || !document.hasFocus()) {
       selectionCopyContext = null;
       removeSelectionCopyButton();
       return;
@@ -309,6 +446,10 @@
   }
 
   function handleSelectionCopy(event) {
+    if (!uiState.enableFeature) {
+      return;
+    }
+
     if (!event.clipboardData || !window.ChatGPTToNotionConverter?.convertFragment) {
       return;
     }

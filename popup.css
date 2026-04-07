@@ -44,7 +44,58 @@ h1 {
 .toggles {
   display: grid;
   gap: 10px;
-  margin-bottom: 14px;
+  margin: 12px 0 14px;
+}
+
+.options-panel {
+  margin: 0 0 14px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.options-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  user-select: none;
+}
+
+.options-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.options-panel summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #64748b;
+  border-bottom: 2px solid #64748b;
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+  margin-right: 2px;
+}
+
+.options-panel[open] summary {
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.options-panel[open] summary::after {
+  transform: rotate(225deg);
+}
+
+.options-panel section {
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 .toggle-row {
@@ -56,6 +107,11 @@ h1 {
   border-radius: 12px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
+}
+
+.toggle-row.is-disabled,
+.range-field.is-disabled {
+  opacity: 0.55;
 }
 
 .toggle-row span:first-child {
@@ -142,6 +198,7 @@ h1 {
   padding: 10px 12px;
   background: #0f766e;
   color: #ffffff;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -168,6 +225,34 @@ h1 {
   line-height: 1.45;
 }
 
+.undo-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #fecaca;
+}
+
+.undo-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.undo-copy strong {
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.undo-copy p,
+.undo-copy div {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #7f1d1d;
+}
+
 .notes {
   display: grid;
   gap: 6px;
@@ -178,4 +263,58 @@ h1 {
 
 .notes p {
   margin: 0;
+}
+
+.range-field {
+  padding-top: 0;
+  padding-bottom: 12px;
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  margin: 0 0 12px;
+}
+
+.range-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.range-header strong {
+  font-size: 12px;
+  color: #0f766e;
+}
+
+.range-field input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.range-field.is-disabled input[type="range"] {
+  cursor: not-allowed;
+}
+
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+button.danger {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

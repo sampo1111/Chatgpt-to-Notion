@@ -1,9 +1,12 @@
 const SETTINGS_KEY = "chatgptToNotionSettings";
 const LAST_COPY_KEY = "chatgptToNotionLastCopy";
+const LAST_UNDO_KEY = "chatgptToNotionLastUndo";
 const NOTION_VERSION = "2026-03-11";
 const TEXT_CHUNK_SIZE = 2000;
-const CHILDREN_CHUNK_SIZE = 20;
-const REQUEST_BODY_SOFT_LIMIT_BYTES = 120000;
+const CHILDREN_CHUNK_SIZE = 100;
+const REQUEST_BODY_SOFT_LIMIT_BYTES = 350000;
+const NOTION_CONCURRENCY_LIMIT = 3;
+const NOTION_MAX_RETRIES = 4;
 const DEFAULT_ANNOTATIONS = {
   bold: false,
   italic: false,
@@ -14,8 +17,11 @@ const DEFAULT_ANNOTATIONS = {
 };
 const DEFAULT_SETTINGS = {
   notionToken: "",
+  enableFeature: true,
   enableCopyButton: true,
-  enableNotionPaste: true
+  enableNotionPaste: true,
+  enablePasteButton: true,
+  buttonScale: 1
 };
 const ACTIVE_APPEND_OPERATIONS = new Map();
 const SUPPORTED_CODE_LANGUAGES = new Set([
@@ -130,8 +136,17 @@ async function handleMessage(message) {
       return appendStoredBlocksToNotionPage(message.pageId, message.anchorBlockId, message.operationId);
     case "cancelAppendOperation":
       return cancelAppendOperation(message.operationId);
+    case "undoAppendedBlocks":
+      return undoAppendedBlocks({
+        pageId: message.pageId,
+        blockIds: message.blockIds
+      });
+    case "undoLastStoredPaste":
+      return undoLastStoredPaste();
     case "getLastCopySummary":
       return getLastCopySummary();
+    case "getLastUndoSummary":
+      return getLastUndoSummary();
     default:
       throw new Error("Unsupported message type");
   }
@@ -159,8 +174,11 @@ async function getNotionSettings() {
   return {
     hasToken: Boolean(settings.notionToken),
     maskedToken: maskToken(settings.notionToken),
+    enableFeature: settings.enableFeature,
     enableCopyButton: settings.enableCopyButton,
-    enableNotionPaste: settings.enableNotionPaste
+    enableNotionPaste: settings.enableNotionPaste,
+    enablePasteButton: settings.enablePasteButton,
+    buttonScale: settings.buttonScale
   };
 }
 
@@ -177,8 +195,11 @@ async function saveUiSettings(nextSettings) {
 
   return {
     saved: true,
+    enableFeature: mergedSettings.enableFeature,
     enableCopyButton: mergedSettings.enableCopyButton,
-    enableNotionPaste: mergedSettings.enableNotionPaste
+    enableNotionPaste: mergedSettings.enableNotionPaste,
+    enablePasteButton: mergedSettings.enablePasteButton,
+    buttonScale: mergedSettings.buttonScale
   };
 }
 
@@ -203,6 +224,12 @@ async function testNotionConnection(tokenOverride) {
 }
 
 async function appendStoredBlocksToNotionPage(pageId, anchorBlockId, operationId) {
+  const settings = await readSettings();
+
+  if (!settings.enableFeature) {
+    throw new Error("The feature is disabled in the popup settings.");
+  }
+
   const stored = await chrome.storage.local.get([LAST_COPY_KEY]);
   const lastCopy = stored[LAST_COPY_KEY];
 
@@ -228,6 +255,11 @@ async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId, operati
   }
 
   const settings = await readSettings();
+
+  if (!settings.enableFeature) {
+    throw new Error("The feature is disabled in the popup settings.");
+  }
+
   const token = (settings.notionToken || "").trim();
 
   if (!token) {
@@ -259,12 +291,16 @@ async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId, operati
       signal: operation.signal
     });
 
+    await persistLastUndoContext({
+      pageId: normalizedPageId,
+      blockIds: appendResult.topLevelBlockIds,
+      appendedBlocks: appendResult.appendedCount
+    });
+
     return {
       appendedBlocks: appendResult.appendedCount,
       pageId: normalizedPageId,
-      parentId,
-      anchorBlockId: appendTarget.anchorBlockId || null,
-      operationId: operation.id
+      parentId
     };
   } finally {
     finishAppendOperation(operation.id);
@@ -284,29 +320,37 @@ async function getLastCopySummary() {
   };
 }
 
-async function notionFetch(path, options) {
-  let response;
+async function getLastUndoSummary() {
+  const stored = await chrome.storage.local.get([LAST_UNDO_KEY]);
+  const lastUndo = stored[LAST_UNDO_KEY];
 
-  try {
-    response = await fetch(`https://api.notion.com/v1${path}`, {
-      method: options.method || "GET",
-      headers: {
-        Authorization: `Bearer ${options.token}`,
-        "Content-Type": "application/json",
-        "Notion-Version": NOTION_VERSION
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: options.signal
-    });
-  } catch (error) {
-    if (isAbortLikeError(error) || options.signal?.aborted) {
-      throw new Error("Paste canceled.");
-    }
+  return {
+    hasUndo: Boolean(lastUndo?.pageId && Array.isArray(lastUndo.blockIds) && lastUndo.blockIds.length),
+    pageId: lastUndo?.pageId || null,
+    blockCount: lastUndo?.appendedBlocks || lastUndo?.blockIds?.length || 0,
+    updatedAt: lastUndo?.updatedAt || null
+  };
+}
 
-    throw error;
+async function undoLastStoredPaste() {
+  const stored = await chrome.storage.local.get([LAST_UNDO_KEY]);
+  const lastUndo = stored[LAST_UNDO_KEY];
+
+  if (!lastUndo?.pageId || !Array.isArray(lastUndo.blockIds) || !lastUndo.blockIds.length) {
+    throw new Error("되돌릴 최근 붙여넣기가 없습니다.");
   }
 
-  const data = await response.json().catch(() => ({}));
+  const result = await undoAppendedBlocks({
+    pageId: lastUndo.pageId,
+    blockIds: lastUndo.blockIds
+  });
+
+  await clearLastUndoContext();
+  return result;
+}
+
+async function notionFetch(path, options) {
+  const { response, data } = await performNotionRequest(path, options);
 
   if (!response.ok) {
     const detail = data?.message || data?.code || response.statusText;
@@ -316,25 +360,199 @@ async function notionFetch(path, options) {
   return data;
 }
 
+async function performNotionRequest(path, options) {
+  const url = `https://api.notion.com/v1${path}`;
+  const method = options.method || "GET";
+  const headers = {
+    Authorization: `Bearer ${options.token}`,
+    "Notion-Version": NOTION_VERSION,
+    ...(options.body ? { "Content-Type": "application/json" } : {})
+  };
+  const body = options.body ? JSON.stringify(options.body) : undefined;
+
+  for (let attempt = 0; attempt < NOTION_MAX_RETRIES; attempt += 1) {
+    throwIfCanceled(options.signal);
+    let response;
+
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body,
+        signal: options.signal
+      });
+    } catch (error) {
+      if (isAbortLikeError(error) || options.signal?.aborted) {
+        throw new Error("Paste canceled.");
+      }
+
+      if (!shouldRetryNotionError(error, attempt)) {
+        throw error;
+      }
+
+      await waitWithSignal(getRetryDelayMs(null, null, attempt), options.signal);
+      continue;
+    }
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!shouldRetryNotionResponse(response, attempt)) {
+      return {
+        response,
+        data
+      };
+    }
+
+    await waitWithSignal(getRetryDelayMs(response, data, attempt), options.signal);
+  }
+
+  throw new Error("Notion API request failed after multiple retries.");
+}
+
+function shouldRetryNotionResponse(response, attempt) {
+  if (attempt >= NOTION_MAX_RETRIES - 1) {
+    return false;
+  }
+
+  return [409, 429, 502, 503, 504].includes(response.status);
+}
+
+function shouldRetryNotionError(error, attempt) {
+  if (attempt >= NOTION_MAX_RETRIES - 1) {
+    return false;
+  }
+
+  return /network|fetch failed|timed out|timeout|temporarily unavailable/i.test(
+    String(error?.message || error)
+  );
+}
+
+function getRetryDelayMs(response, data, attempt) {
+  const retryAfterHeader = response?.headers?.get?.("Retry-After");
+  const retryAfterSeconds = Number(retryAfterHeader);
+
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  if (response?.status === 429) {
+    return 1000 * (attempt + 1);
+  }
+
+  if ([502, 503, 504].includes(response?.status) || /temporarily unavailable/i.test(String(data?.message || ""))) {
+    return 500 * (attempt + 1);
+  }
+
+  return 300 * (attempt + 1);
+}
+
+async function waitWithSignal(ms, signal) {
+  if (!ms) {
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      if (signal && onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      resolve();
+    }, ms);
+    let onAbort = null;
+
+    if (!signal) {
+      return;
+    }
+
+    onAbort = () => {
+      clearTimeout(timeoutId);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("Paste canceled."));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function runWithConcurrency(items, limit, worker) {
+  const queue = Array.isArray(items) ? items : [];
+  if (!queue.length) {
+    return [];
+  }
+
+  const results = new Array(queue.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit || 1, queue.length));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < queue.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(queue[currentIndex], currentIndex);
+      }
+    })
+  );
+
+  return results;
+}
+
 async function readSettings() {
   const stored = await chrome.storage.local.get([SETTINGS_KEY]);
+  const rawSettings = stored[SETTINGS_KEY] || {};
+  const enableFeature =
+    rawSettings.enableFeature === undefined
+      ? rawSettings.enableNotionPaste === undefined
+        ? DEFAULT_SETTINGS.enableFeature
+        : Boolean(rawSettings.enableNotionPaste)
+      : Boolean(rawSettings.enableFeature);
+
   return {
-    ...DEFAULT_SETTINGS,
-    ...(stored[SETTINGS_KEY] || {})
+    notionToken: String(rawSettings.notionToken || DEFAULT_SETTINGS.notionToken),
+    enableFeature,
+    enableNotionPaste: enableFeature,
+    enableCopyButton:
+      rawSettings.enableCopyButton === undefined
+        ? DEFAULT_SETTINGS.enableCopyButton
+        : Boolean(rawSettings.enableCopyButton),
+    enablePasteButton:
+      rawSettings.enablePasteButton === undefined
+        ? DEFAULT_SETTINGS.enablePasteButton
+        : Boolean(rawSettings.enablePasteButton),
+    buttonScale: normalizeButtonScale(rawSettings.buttonScale)
   };
 }
 
 function sanitizeUiSettings(settings) {
+  const enableFeature =
+    settings.enableFeature === undefined
+      ? settings.enableNotionPaste === undefined
+        ? DEFAULT_SETTINGS.enableFeature
+        : Boolean(settings.enableNotionPaste)
+      : Boolean(settings.enableFeature);
+
   return {
+    enableFeature,
     enableCopyButton:
       settings.enableCopyButton === undefined
         ? DEFAULT_SETTINGS.enableCopyButton
         : Boolean(settings.enableCopyButton),
-    enableNotionPaste:
-      settings.enableNotionPaste === undefined
-        ? DEFAULT_SETTINGS.enableNotionPaste
-        : Boolean(settings.enableNotionPaste)
+    enableNotionPaste: enableFeature,
+    enablePasteButton:
+      settings.enablePasteButton === undefined
+        ? DEFAULT_SETTINGS.enablePasteButton
+        : Boolean(settings.enablePasteButton),
+    buttonScale: normalizeButtonScale(settings.buttonScale)
   };
+}
+
+function normalizeButtonScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_SETTINGS.buttonScale;
+  }
+
+  return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
 }
 
 async function resolveAppendTarget({ pageId, anchorBlockId, token, signal }) {
@@ -378,6 +596,7 @@ async function appendNodesToParent({ parentId, afterBlockId, nodes, token, signa
   throwIfCanceled(signal);
   let nextAfterBlockId = afterBlockId;
   let appendedCount = 0;
+  const topLevelBlockIds = [];
 
   for (const nodeChunk of buildAppendChunks(nodes, parentId, nextAfterBlockId)) {
     throwIfCanceled(signal);
@@ -390,11 +609,13 @@ async function appendNodesToParent({ parentId, afterBlockId, nodes, token, signa
     });
     nextAfterBlockId = appendResult.lastInsertedId || null;
     appendedCount += appendResult.appendedCount;
+    topLevelBlockIds.push(...appendResult.topLevelBlockIds);
   }
 
   return {
     lastInsertedId: nextAfterBlockId,
-    appendedCount
+    appendedCount,
+    topLevelBlockIds
   };
 }
 
@@ -448,7 +669,8 @@ async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token, 
     return {
       response,
       lastInsertedId: results[results.length - 1]?.id || afterBlockId || null,
-      appendedCount: countAppendNodes(nodeChunk)
+      appendedCount: countAppendNodes(nodeChunk),
+      topLevelBlockIds: results.map((result) => result?.id).filter(Boolean)
     };
   } catch (error) {
     if (!isRequestBodyTooLargeError(error) || nodeChunk.length <= 1) {
@@ -463,25 +685,34 @@ async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token, 
       parentId,
       afterBlockId,
       nodeChunk: firstHalf,
-      token
+      token,
+      signal
     });
 
     if (!secondHalf.length) {
       return firstResult;
     }
 
-    return appendChunkWithRetry({
+    const secondResult = await appendChunkWithRetry({
       parentId,
       afterBlockId: firstResult.lastInsertedId,
       nodeChunk: secondHalf,
-      token
+      token,
+      signal
     });
+
+    return {
+      lastInsertedId: secondResult.lastInsertedId,
+      appendedCount: firstResult.appendedCount + secondResult.appendedCount,
+      topLevelBlockIds: [...firstResult.topLevelBlockIds, ...secondResult.topLevelBlockIds]
+    };
   }
 }
 
 async function appendNestedChildrenForChunk({ nodeChunk, results, token, signal }) {
+  const nestedJobs = [];
+
   for (let index = 0; index < nodeChunk.length; index += 1) {
-    throwIfCanceled(signal);
     const node = nodeChunk[index];
     const childNodes = node.children || [];
 
@@ -495,16 +726,22 @@ async function appendNestedChildrenForChunk({ nodeChunk, results, token, signal 
       throw new Error("Notion did not return the created block ID for nested content.");
     }
 
-    const createdBlockId = normalizeNotionId(createdBlockIdRaw);
+    nestedJobs.push({
+      parentId: normalizeNotionId(createdBlockIdRaw),
+      childNodes
+    });
+  }
 
+  await runWithConcurrency(nestedJobs, NOTION_CONCURRENCY_LIMIT, async (job) => {
+    throwIfCanceled(signal);
     await appendNodesToParent({
-      parentId: createdBlockId,
+      parentId: job.parentId,
       afterBlockId: null,
-      nodes: childNodes,
+      nodes: job.childNodes,
       token,
       signal
     });
-  }
+  });
 }
 
 function beginAppendOperation(operationId) {
@@ -544,6 +781,84 @@ function cancelAppendOperation(operationId) {
   };
 }
 
+async function undoAppendedBlocks({ pageId, blockIds }) {
+  if (!pageId) {
+    throw new Error("Could not detect the current Notion page.");
+  }
+
+  const settings = await readSettings();
+
+  const token = (settings.notionToken || "").trim();
+
+  if (!token) {
+    throw new Error("No Notion token is saved. Open the extension popup and add one.");
+  }
+
+  const normalizedBlockIds = Array.from(
+    new Set(
+      (Array.isArray(blockIds) ? blockIds : [])
+        .map((blockId) => {
+          try {
+            return normalizeNotionId(blockId);
+          } catch (error) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+    )
+  );
+
+  if (!normalizedBlockIds.length) {
+    throw new Error("There is no recent paste to undo.");
+  }
+
+  const deletedFlags = await runWithConcurrency(
+    [...normalizedBlockIds].reverse(),
+    NOTION_CONCURRENCY_LIMIT,
+    (blockId) => deleteBlockById(blockId, token)
+  );
+  const undoneBlocks = deletedFlags.filter(Boolean).length;
+
+  return {
+    undoneBlocks,
+    pageId: normalizeNotionId(pageId)
+  };
+}
+
+async function persistLastUndoContext({ pageId, blockIds, appendedBlocks }) {
+  const normalizedBlockIds = Array.from(
+    new Set(
+      (Array.isArray(blockIds) ? blockIds : [])
+        .map((blockId) => {
+          try {
+            return normalizeNotionId(blockId);
+          } catch (error) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+    )
+  );
+
+  if (!pageId || !normalizedBlockIds.length) {
+    await clearLastUndoContext();
+    return;
+  }
+
+  await chrome.storage.local.set({
+    [LAST_UNDO_KEY]: {
+      pageId: normalizeNotionId(pageId),
+      blockIds: normalizedBlockIds,
+      appendedBlocks: Number(appendedBlocks) || normalizedBlockIds.length,
+      updatedAt: new Date().toISOString()
+    }
+  });
+}
+
+async function clearLastUndoContext() {
+  await chrome.storage.local.remove(LAST_UNDO_KEY);
+}
+
 function throwIfCanceled(signal) {
   if (signal?.aborted) {
     throw new Error("Paste canceled.");
@@ -559,40 +874,50 @@ function isAppendCanceledError(error) {
   return /Paste canceled/i.test(String(error?.message || error));
 }
 
+async function deleteBlockById(blockId, token) {
+  const { response, data } = await performNotionRequest(`/blocks/${blockId}`, {
+    method: "DELETE",
+    token
+  });
+
+  if (response.ok) {
+    return true;
+  }
+
+  if (response.status === 404) {
+    return false;
+  }
+
+  const detail = data?.message || data?.code || response.statusText;
+  throw new Error(`Notion API error: ${detail}`);
+}
+
 function buildAppendChunks(nodes, parentId, initialAfterBlockId) {
   const chunks = [];
   let currentChunk = [];
   let currentAfterBlockId = initialAfterBlockId;
+  let currentEstimatedBytes = estimateAppendRequestBaseBytes(parentId, currentAfterBlockId);
 
   for (const node of nodes) {
-    if (!currentChunk.length) {
-      currentChunk.push(node);
-      continue;
-    }
-
-    const candidateChunk = [...currentChunk, node];
-    const body = createAppendBody(
-      candidateChunk.map((entry) => entry.payload),
-      currentAfterBlockId
-    );
-    const estimatedBytes = byteLengthUtf8(
-      JSON.stringify({
-        parentId,
-        body
-      })
-    );
+    const nodeEstimatedBytes = estimateAppendNodeBytes(node);
+    const candidateLength = currentChunk.length + 1;
+    const candidateEstimatedBytes = currentEstimatedBytes + nodeEstimatedBytes;
 
     if (
-      candidateChunk.length > CHILDREN_CHUNK_SIZE ||
-      estimatedBytes > REQUEST_BODY_SOFT_LIMIT_BYTES
+      currentChunk.length &&
+      (candidateLength > CHILDREN_CHUNK_SIZE ||
+        candidateEstimatedBytes > REQUEST_BODY_SOFT_LIMIT_BYTES)
     ) {
       chunks.push(currentChunk);
       currentChunk = [node];
       currentAfterBlockId = null;
+      currentEstimatedBytes =
+        estimateAppendRequestBaseBytes(parentId, currentAfterBlockId) + nodeEstimatedBytes;
       continue;
     }
 
-    currentChunk = candidateChunk;
+    currentChunk.push(node);
+    currentEstimatedBytes = candidateEstimatedBytes;
   }
 
   if (currentChunk.length) {
@@ -600,6 +925,16 @@ function buildAppendChunks(nodes, parentId, initialAfterBlockId) {
   }
 
   return chunks;
+}
+
+function estimateAppendRequestBaseBytes(parentId, afterBlockId) {
+  const parentBytes = byteLengthUtf8(String(parentId || ""));
+  const afterBytes = afterBlockId ? byteLengthUtf8(String(afterBlockId || "")) + 96 : 32;
+  return parentBytes + afterBytes + 96;
+}
+
+function estimateAppendNodeBytes(node) {
+  return byteLengthUtf8(JSON.stringify(node?.payload || {})) + 2;
 }
 
 function blockToAppendNodes(block) {

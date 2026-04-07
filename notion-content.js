@@ -14,13 +14,18 @@
   };
   let suppressNativePasteUntil = 0;
   let activePasteOperation = null;
+  let floatingButtonsSyncScheduled = false;
+  let extensionReloadScheduled = false;
   let uiState = {
-    enableNotionPaste: true
+    enableFeature: true,
+    enablePasteButton: true,
+    buttonScale: 1
   };
 
   async function boot() {
     await loadUiState();
-    injectPasteButton();
+    applyButtonScale();
+    syncFloatingButtons();
     observePage();
     registerCursorTracking();
     registerWindowActivityTracking();
@@ -31,12 +36,28 @@
 
   function observePage() {
     const observer = new MutationObserver(() => {
-      injectPasteButton();
+      scheduleFloatingButtonsSync();
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true
+    });
+  }
+
+  function syncFloatingButtons() {
+    injectPasteButton();
+  }
+
+  function scheduleFloatingButtonsSync() {
+    if (floatingButtonsSyncScheduled) {
+      return;
+    }
+
+    floatingButtonsSyncScheduled = true;
+    window.requestAnimationFrame(() => {
+      floatingButtonsSyncScheduled = false;
+      syncFloatingButtons();
     });
   }
 
@@ -76,7 +97,7 @@
     document.addEventListener(
       "paste",
       async (event) => {
-        if (!uiState.enableNotionPaste) {
+        if (!uiState.enableFeature) {
           return;
         }
 
@@ -100,7 +121,7 @@
     document.addEventListener(
       "beforeinput",
       (event) => {
-        if (!uiState.enableNotionPaste) {
+        if (!uiState.enableFeature) {
           return;
         }
 
@@ -137,14 +158,17 @@
       }
 
       const nextSettings = changes[SETTINGS_KEY].newValue || {};
-      uiState.enableNotionPaste = nextSettings.enableNotionPaste !== false;
-      injectPasteButton();
+      uiState.enableFeature = resolveFeatureEnabled(nextSettings);
+      uiState.enablePasteButton = nextSettings.enablePasteButton !== false;
+      uiState.buttonScale = normalizeButtonScale(nextSettings.buttonScale);
+      applyButtonScale();
+      scheduleFloatingButtonsSync();
     });
   }
 
   function registerWindowActivityTracking() {
     const sync = () => {
-      injectPasteButton();
+      scheduleFloatingButtonsSync();
     };
 
     window.addEventListener("focus", sync, true);
@@ -156,7 +180,34 @@
   async function loadUiState() {
     const stored = await chrome.storage.local.get([SETTINGS_KEY]);
     const settings = stored[SETTINGS_KEY] || {};
-    uiState.enableNotionPaste = settings.enableNotionPaste !== false;
+    uiState.enableFeature = resolveFeatureEnabled(settings);
+    uiState.enablePasteButton = settings.enablePasteButton !== false;
+    uiState.buttonScale = normalizeButtonScale(settings.buttonScale);
+  }
+
+  function resolveFeatureEnabled(settings) {
+    if (settings?.enableFeature !== undefined) {
+      return settings.enableFeature !== false;
+    }
+
+    if (settings?.enableNotionPaste !== undefined) {
+      return settings.enableNotionPaste !== false;
+    }
+
+    return true;
+  }
+
+  function applyButtonScale() {
+    document.documentElement.style.setProperty("--ai-to-notion-button-scale", String(uiState.buttonScale));
+  }
+
+  function normalizeButtonScale(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return 1;
+    }
+
+    return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
   }
 
   function removePasteButton() {
@@ -164,7 +215,7 @@
   }
 
   function shouldShowPasteButton() {
-    return uiState.enableNotionPaste && isNotionWindowActive();
+    return uiState.enableFeature && uiState.enablePasteButton && isNotionWindowActive();
   }
 
   function isNotionWindowActive() {
@@ -278,7 +329,21 @@
       return textPayload;
     }
 
+    if (!shouldParseGeneratedHtmlPayload(html)) {
+      return null;
+    }
+
     return parseGeneratedHtmlPayload(html, text);
+  }
+
+  function shouldParseGeneratedHtmlPayload(html) {
+    if (!html) {
+      return false;
+    }
+
+    return /data-chatgpt-to-notion-math|<math\b|<mjx-container\b|<(p|pre|ul|ol|table|blockquote|h[1-4]|hr)\b/i.test(
+      html
+    );
   }
 
   function decodeHtmlPayload(html) {
@@ -469,6 +534,7 @@
 
     activePasteOperation = operationState;
     setButtonBusy(currentButton, true);
+    scheduleFloatingButtonsSync();
 
     try {
       await operation(operationState.id);
@@ -484,6 +550,7 @@
       }
 
       setButtonBusy(currentButton, false);
+      scheduleFloatingButtonsSync();
     }
   }
 
@@ -550,22 +617,47 @@
   }
 
   async function sendRuntimeMessage(message) {
+    if (!canUseRuntimeMessaging()) {
+      handleUnavailableExtensionContext();
+      throw new Error("Extension context invalidated.");
+    }
+
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (error) {
       if (isExtensionContextInvalidated(error)) {
-        showToast("Extension updated. Reloading this Notion tab...");
-        window.setTimeout(() => {
-          window.location.reload();
-        }, 600);
+        handleUnavailableExtensionContext();
+        throw new Error("Extension context invalidated.");
       }
 
       throw error;
     }
   }
 
+  function canUseRuntimeMessaging() {
+    return typeof chrome !== "undefined" && !!chrome.runtime && typeof chrome.runtime.sendMessage === "function";
+  }
+
+  function handleUnavailableExtensionContext() {
+    if (extensionReloadScheduled) {
+      return;
+    }
+
+    extensionReloadScheduled = true;
+    showToast("Extension updated. Reloading this Notion tab...");
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 600);
+  }
+
   function isExtensionContextInvalidated(error) {
-    return /Extension context invalidated/i.test(String(error?.message || error));
+    if (!canUseRuntimeMessaging()) {
+      return true;
+    }
+
+    return /Extension context invalidated|Cannot read properties of undefined \(reading 'sendMessage'\)|Receiving end does not exist|message port closed/i.test(
+      String(error?.message || error)
+    );
   }
 
   function parseMarkdownBlocks(markdown) {
