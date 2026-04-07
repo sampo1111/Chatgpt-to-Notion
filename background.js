@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   enableCopyButton: true,
   enableNotionPaste: true
 };
+const ACTIVE_APPEND_OPERATIONS = new Map();
 const SUPPORTED_CODE_LANGUAGES = new Set([
   "abap",
   "arduino",
@@ -96,7 +97,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   void handleMessage(message)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => {
-      console.error("ChatGPT to Notion background error", error);
+      if (!isAppendCanceledError(error)) {
+        console.error("ChatGPT to Notion background error", error);
+      }
       sendResponse({
         ok: false,
         error: error instanceof Error ? error.message : String(error)
@@ -120,10 +123,13 @@ async function handleMessage(message) {
       return appendBlocksToNotionPage({
         pageId: message.pageId,
         blocks: message.blocks,
-        anchorBlockId: message.anchorBlockId
+        anchorBlockId: message.anchorBlockId,
+        operationId: message.operationId
       });
     case "appendStoredBlocksToNotionPage":
-      return appendStoredBlocksToNotionPage(message.pageId, message.anchorBlockId);
+      return appendStoredBlocksToNotionPage(message.pageId, message.anchorBlockId, message.operationId);
+    case "cancelAppendOperation":
+      return cancelAppendOperation(message.operationId);
     case "getLastCopySummary":
       return getLastCopySummary();
     default:
@@ -196,7 +202,7 @@ async function testNotionConnection(tokenOverride) {
   };
 }
 
-async function appendStoredBlocksToNotionPage(pageId, anchorBlockId) {
+async function appendStoredBlocksToNotionPage(pageId, anchorBlockId, operationId) {
   const stored = await chrome.storage.local.get([LAST_COPY_KEY]);
   const lastCopy = stored[LAST_COPY_KEY];
 
@@ -207,11 +213,12 @@ async function appendStoredBlocksToNotionPage(pageId, anchorBlockId) {
   return appendBlocksToNotionPage({
     pageId,
     blocks: lastCopy.blocks,
-    anchorBlockId
+    anchorBlockId,
+    operationId
   });
 }
 
-async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId }) {
+async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId, operationId }) {
   if (!pageId) {
     throw new Error("Could not detect the current Notion page.");
   }
@@ -227,32 +234,41 @@ async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId }) {
     throw new Error("No Notion token is saved. Open the extension popup and add one.");
   }
 
-  const normalizedPageId = normalizeNotionId(pageId);
-  const nodes = blocksToAppendNodes(blocks);
-  const appendTarget = await resolveAppendTarget({
-    pageId: normalizedPageId,
-    anchorBlockId,
-    token
-  });
+  const operation = beginAppendOperation(operationId);
 
-  if (!nodes.length) {
-    throw new Error("There was nothing to send to Notion.");
+  try {
+    const normalizedPageId = normalizeNotionId(pageId);
+    const nodes = blocksToAppendNodes(blocks);
+    const appendTarget = await resolveAppendTarget({
+      pageId: normalizedPageId,
+      anchorBlockId,
+      token,
+      signal: operation.signal
+    });
+
+    if (!nodes.length) {
+      throw new Error("There was nothing to send to Notion.");
+    }
+
+    const parentId = appendTarget.parentId;
+    const appendResult = await appendNodesToParent({
+      parentId,
+      afterBlockId: appendTarget.afterBlockId,
+      nodes,
+      token,
+      signal: operation.signal
+    });
+
+    return {
+      appendedBlocks: appendResult.appendedCount,
+      pageId: normalizedPageId,
+      parentId,
+      anchorBlockId: appendTarget.anchorBlockId || null,
+      operationId: operation.id
+    };
+  } finally {
+    finishAppendOperation(operation.id);
   }
-
-  const parentId = appendTarget.parentId;
-  const appendResult = await appendNodesToParent({
-    parentId,
-    afterBlockId: appendTarget.afterBlockId,
-    nodes,
-    token
-  });
-
-  return {
-    appendedBlocks: appendResult.appendedCount,
-    pageId: normalizedPageId,
-    parentId,
-    anchorBlockId: appendTarget.anchorBlockId || null
-  };
 }
 
 async function getLastCopySummary() {
@@ -267,15 +283,26 @@ async function getLastCopySummary() {
 }
 
 async function notionFetch(path, options) {
-  const response = await fetch(`https://api.notion.com/v1${path}`, {
-    method: options.method || "GET",
-    headers: {
-      Authorization: `Bearer ${options.token}`,
-      "Content-Type": "application/json",
-      "Notion-Version": NOTION_VERSION
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let response;
+
+  try {
+    response = await fetch(`https://api.notion.com/v1${path}`, {
+      method: options.method || "GET",
+      headers: {
+        Authorization: `Bearer ${options.token}`,
+        "Content-Type": "application/json",
+        "Notion-Version": NOTION_VERSION
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: options.signal
+    });
+  } catch (error) {
+    if (isAbortLikeError(error) || options.signal?.aborted) {
+      throw new Error("Paste canceled.");
+    }
+
+    throw error;
+  }
 
   const data = await response.json().catch(() => ({}));
 
@@ -308,7 +335,9 @@ function sanitizeUiSettings(settings) {
   };
 }
 
-async function resolveAppendTarget({ pageId, anchorBlockId, token }) {
+async function resolveAppendTarget({ pageId, anchorBlockId, token, signal }) {
+  throwIfCanceled(signal);
+
   if (!anchorBlockId) {
     return {
       parentId: pageId,
@@ -322,7 +351,8 @@ async function resolveAppendTarget({ pageId, anchorBlockId, token }) {
   try {
     const block = await notionFetch(`/blocks/${normalizedAnchorBlockId}`, {
       method: "GET",
-      token
+      token,
+      signal
     });
 
     const parentId = parentObjectToId(block?.parent) || pageId;
@@ -342,16 +372,19 @@ async function resolveAppendTarget({ pageId, anchorBlockId, token }) {
   }
 }
 
-async function appendNodesToParent({ parentId, afterBlockId, nodes, token }) {
+async function appendNodesToParent({ parentId, afterBlockId, nodes, token, signal }) {
+  throwIfCanceled(signal);
   let nextAfterBlockId = afterBlockId;
   let appendedCount = 0;
 
   for (const nodeChunk of buildAppendChunks(nodes, parentId, nextAfterBlockId)) {
+    throwIfCanceled(signal);
     const appendResult = await appendChunkWithRetry({
       parentId,
       afterBlockId: nextAfterBlockId,
       nodeChunk,
-      token
+      token,
+      signal
     });
     nextAfterBlockId = appendResult.lastInsertedId || null;
     appendedCount += appendResult.appendedCount;
@@ -389,14 +422,16 @@ function createAppendBody(children, afterBlockId) {
   };
 }
 
-async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token }) {
+async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token, signal }) {
+  throwIfCanceled(signal);
   const payloadChunk = nodeChunk.map((node) => node.payload);
 
   try {
     const response = await notionFetch(`/blocks/${parentId}/children`, {
       method: "PATCH",
       token,
-      body: createAppendBody(payloadChunk, afterBlockId)
+      body: createAppendBody(payloadChunk, afterBlockId),
+      signal
     });
 
     const results = Array.isArray(response?.results) ? response.results : [];
@@ -404,7 +439,8 @@ async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token }
     await appendNestedChildrenForChunk({
       nodeChunk,
       results,
-      token
+      token,
+      signal
     });
 
     return {
@@ -441,8 +477,9 @@ async function appendChunkWithRetry({ parentId, afterBlockId, nodeChunk, token }
   }
 }
 
-async function appendNestedChildrenForChunk({ nodeChunk, results, token }) {
+async function appendNestedChildrenForChunk({ nodeChunk, results, token, signal }) {
   for (let index = 0; index < nodeChunk.length; index += 1) {
+    throwIfCanceled(signal);
     const node = nodeChunk[index];
     const childNodes = node.children || [];
 
@@ -462,9 +499,62 @@ async function appendNestedChildrenForChunk({ nodeChunk, results, token }) {
       parentId: createdBlockId,
       afterBlockId: null,
       nodes: childNodes,
-      token
+      token,
+      signal
     });
   }
+}
+
+function beginAppendOperation(operationId) {
+  const id = operationId || `append-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const controller = new AbortController();
+  ACTIVE_APPEND_OPERATIONS.set(id, controller);
+
+  return {
+    id,
+    signal: controller.signal
+  };
+}
+
+function finishAppendOperation(operationId) {
+  ACTIVE_APPEND_OPERATIONS.delete(operationId);
+}
+
+function cancelAppendOperation(operationId) {
+  if (!operationId) {
+    return {
+      canceled: false
+    };
+  }
+
+  const controller = ACTIVE_APPEND_OPERATIONS.get(operationId);
+  if (!controller) {
+    return {
+      canceled: false
+    };
+  }
+
+  controller.abort();
+  ACTIVE_APPEND_OPERATIONS.delete(operationId);
+
+  return {
+    canceled: true
+  };
+}
+
+function throwIfCanceled(signal) {
+  if (signal?.aborted) {
+    throw new Error("Paste canceled.");
+  }
+}
+
+function isAbortLikeError(error) {
+  const text = String(error?.name || error?.message || error);
+  return /AbortError|aborted|canceled/i.test(text);
+}
+
+function isAppendCanceledError(error) {
+  return /Paste canceled/i.test(String(error?.message || error));
 }
 
 function buildAppendChunks(nodes, parentId, initialAfterBlockId) {

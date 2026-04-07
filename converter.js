@@ -26,6 +26,15 @@
     };
   }
 
+  function convertFragment(root) {
+    const blocks = parseSelectionContainer(root);
+    return {
+      blocks,
+      markdown: renderBlocksMarkdown(blocks).trim(),
+      html: renderBlocksHtml(blocks).trim()
+    };
+  }
+
   function parseContainerChildren(container) {
     const blocks = [];
 
@@ -34,6 +43,14 @@
     }
 
     return compactBlocks(blocks);
+  }
+
+  function parseSelectionContainer(container) {
+    if (!container) {
+      return [];
+    }
+
+    return compactBlocks(parseParagraphLike(container));
   }
 
   function parseNodeToBlocks(node) {
@@ -1094,6 +1111,7 @@
   }
 
   window.ChatGPTToNotionConverter = {
-    convertMessage
+    convertMessage,
+    convertFragment
   };
 })();

@@ -12,6 +12,7 @@
     blockId: null
   };
   let suppressNativePasteUntil = 0;
+  let activePasteOperation = null;
   let uiState = {
     enableNotionPaste: true
   };
@@ -54,7 +55,16 @@
     button.className = "chatgpt-to-notion-floating-button";
     button.textContent = "Paste ChatGPT";
 
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+
     button.addEventListener("click", async () => {
+      if (activePasteOperation) {
+        await cancelActivePaste();
+        return;
+      }
+
       await appendStoredReply(button);
     });
 
@@ -186,8 +196,6 @@
       return;
     }
 
-    setButtonBusy(button, true);
-
     try {
       const clipboardPayload = await readPayloadFromClipboard();
       if (clipboardPayload?.blocks?.length) {
@@ -195,22 +203,28 @@
         return;
       }
 
-      const response = await sendRuntimeMessage({
-        type: "appendStoredBlocksToNotionPage",
-        pageId,
-        anchorBlockId: cursorContext.blockId
-      });
+      await runPasteOperation(button, async (operationId) => {
+        const response = await sendRuntimeMessage({
+          type: "appendStoredBlocksToNotionPage",
+          pageId,
+          anchorBlockId: cursorContext.blockId,
+          operationId
+        });
 
-      if (!response?.ok) {
-        throw new Error(response?.error || "Append failed.");
+        if (!response?.ok) {
+          throw new Error(response?.error || "Append failed.");
+        }
+
+        showToast(`Added ${response.appendedBlocks} block(s) to this Notion page.`);
+      });
+    } catch (error) {
+      if (isPasteCanceledError(error)) {
+        showToast("Paste canceled.");
+        return;
       }
 
-      showToast(`Added ${response.appendedBlocks} block(s) to this Notion page.`);
-    } catch (error) {
       console.error("ChatGPT to Notion append failed", error);
       showToast(error instanceof Error ? error.message : String(error));
-    } finally {
-      setButtonBusy(button, false);
     }
   }
 
@@ -222,26 +236,30 @@
       return;
     }
 
-    setButtonBusy(button, true);
-
     try {
-      const response = await sendRuntimeMessage({
-        type: "appendBlocksToNotionPage",
-        pageId,
-        anchorBlockId: cursorContext.blockId,
-        blocks: payload.blocks
-      });
+      await runPasteOperation(button, async (operationId) => {
+        const response = await sendRuntimeMessage({
+          type: "appendBlocksToNotionPage",
+          pageId,
+          anchorBlockId: cursorContext.blockId,
+          blocks: payload.blocks,
+          operationId
+        });
 
-      if (!response?.ok) {
-        throw new Error(response?.error || "Append failed.");
+        if (!response?.ok) {
+          throw new Error(response?.error || "Append failed.");
+        }
+
+        showToast(`Pasted ${response.appendedBlocks} block(s) into Notion.`);
+      });
+    } catch (error) {
+      if (isPasteCanceledError(error)) {
+        showToast("Paste canceled.");
+        return;
       }
 
-      showToast(`Pasted ${response.appendedBlocks} block(s) into Notion.`);
-    } catch (error) {
       console.error("ChatGPT to Notion paste failed", error);
       showToast(error instanceof Error ? error.message : String(error));
-    } finally {
-      setButtonBusy(button, false);
     }
   }
 
@@ -434,8 +452,64 @@
       return;
     }
 
-    button.disabled = busy;
-    button.textContent = busy ? "Pasting..." : "Paste ChatGPT";
+    button.disabled = false;
+    button.dataset.busy = busy ? "true" : "false";
+    button.setAttribute("aria-busy", busy ? "true" : "false");
+    button.textContent = busy ? "Pasting... Click to cancel" : "Paste ChatGPT";
+  }
+
+  async function runPasteOperation(button, operation) {
+    const currentButton = button || document.getElementById(BUTTON_ID) || null;
+    const operationState = {
+      id: createOperationId(),
+      button: currentButton,
+      canceled: false
+    };
+
+    activePasteOperation = operationState;
+    setButtonBusy(currentButton, true);
+
+    try {
+      await operation(operationState.id);
+    } catch (error) {
+      if (operationState.canceled || isPasteCanceledError(error)) {
+        return;
+      }
+
+      throw error;
+    } finally {
+      if (activePasteOperation === operationState) {
+        activePasteOperation = null;
+      }
+
+      setButtonBusy(currentButton, false);
+    }
+  }
+
+  async function cancelActivePaste() {
+    if (!activePasteOperation || activePasteOperation.canceled) {
+      return;
+    }
+
+    activePasteOperation.canceled = true;
+    showToast("Canceling paste...");
+
+    const response = await sendRuntimeMessage({
+      type: "cancelAppendOperation",
+      operationId: activePasteOperation.id
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || "Could not cancel the current paste.");
+    }
+  }
+
+  function createOperationId() {
+    return `paste-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function isPasteCanceledError(error) {
+    return /Paste canceled/i.test(String(error?.message || error));
   }
 
   function showToast(message) {

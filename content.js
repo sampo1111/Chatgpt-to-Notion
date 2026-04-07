@@ -10,21 +10,34 @@
     "article[data-testid^='conversation-turn-']"
   ].join(", ");
   const CONTENT_SELECTOR = [".markdown", "[class*='markdown']", "[data-testid='conversation-turn-content']"].join(", ");
+  const MATH_SELECTOR = [
+    ".katex",
+    ".katex-display",
+    "[data-testid='inline-math']",
+    "[data-testid='display-math']",
+    "[data-display='true']"
+  ].join(", ");
+  const SELECTION_BUTTON_ID = "chatgpt-to-notion-selection-button";
   const PROCESSED_ATTRIBUTE = "data-chatgpt-to-notion-processed";
   let uiState = {
     enableCopyButton: true
   };
+  let selectionCopyContext = null;
+  let selectionSyncScheduled = false;
 
   async function boot() {
     await loadUiState();
     injectButtons();
     observeConversation();
     observeSettings();
+    observeNativeCopy();
+    observeSelectionCopyButton();
   }
 
   function observeConversation() {
     const observer = new MutationObserver(() => {
       injectButtons();
+      syncSelectionCopyButton();
     });
 
     observer.observe(document.body, {
@@ -79,7 +92,26 @@
       const nextSettings = changes[SETTINGS_KEY].newValue || {};
       uiState.enableCopyButton = nextSettings.enableCopyButton !== false;
       injectButtons();
+      syncSelectionCopyButton();
     });
+  }
+
+  function observeNativeCopy() {
+    document.addEventListener("copy", handleSelectionCopy, true);
+  }
+
+  function observeSelectionCopyButton() {
+    const sync = () => {
+      scheduleSelectionCopyButtonSync();
+    };
+
+    document.addEventListener("selectionchange", sync, true);
+    document.addEventListener("mouseup", sync, true);
+    document.addEventListener("keyup", sync, true);
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync, true);
+    window.addEventListener("blur", sync, true);
+    scheduleSelectionCopyButtonSync();
   }
 
   async function loadUiState() {
@@ -93,6 +125,7 @@
     document.querySelectorAll(`[${PROCESSED_ATTRIBUTE}]`).forEach((message) => {
       message.removeAttribute(PROCESSED_ATTRIBUTE);
     });
+    removeSelectionCopyButton();
   }
 
   function isAssistantMessage(message) {
@@ -187,6 +220,288 @@
     });
 
     return button;
+  }
+
+  function scheduleSelectionCopyButtonSync() {
+    if (selectionSyncScheduled) {
+      return;
+    }
+
+    selectionSyncScheduled = true;
+    window.requestAnimationFrame(() => {
+      selectionSyncScheduled = false;
+      syncSelectionCopyButton();
+    });
+  }
+
+  function syncSelectionCopyButton() {
+    if (!uiState.enableCopyButton || document.hidden || !document.hasFocus()) {
+      selectionCopyContext = null;
+      removeSelectionCopyButton();
+      return;
+    }
+
+    const selectionContext = resolveAssistantSelection(window.getSelection());
+    if (!selectionContext) {
+      selectionCopyContext = null;
+      removeSelectionCopyButton();
+      return;
+    }
+
+    selectionCopyContext = {
+      range: selectionContext.range.cloneRange(),
+      contentRoot: selectionContext.contentRoot
+    };
+
+    const button = ensureSelectionCopyButton();
+    positionSelectionCopyButton(button, selectionCopyContext.range);
+  }
+
+  function ensureSelectionCopyButton() {
+    const existing = document.getElementById(SELECTION_BUTTON_ID);
+    if (existing) {
+      return existing;
+    }
+
+    const button = document.createElement("button");
+    button.id = SELECTION_BUTTON_ID;
+    button.type = "button";
+    button.className = "chatgpt-to-notion-selection-button";
+    button.textContent = "Copy selection";
+
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+
+    button.addEventListener("click", async () => {
+      if (!selectionCopyContext) {
+        return;
+      }
+
+      await copySelectionContext(selectionCopyContext, button);
+    });
+
+    document.body.appendChild(button);
+    return button;
+  }
+
+  function removeSelectionCopyButton() {
+    document.getElementById(SELECTION_BUTTON_ID)?.remove();
+  }
+
+  function positionSelectionCopyButton(button, range) {
+    const rect = getSelectionAnchorRect(range);
+    if (!rect) {
+      selectionCopyContext = null;
+      removeSelectionCopyButton();
+      return;
+    }
+
+    button.style.visibility = "hidden";
+    button.style.left = "0px";
+    button.style.top = "0px";
+
+    const buttonWidth = button.offsetWidth || 120;
+    const buttonHeight = button.offsetHeight || 34;
+    const left = Math.max(12, Math.min(rect.right + 10, window.innerWidth - buttonWidth - 12));
+    const top = Math.max(12, rect.top - buttonHeight - 10);
+
+    button.style.left = `${left}px`;
+    button.style.top = `${top}px`;
+    button.style.visibility = "visible";
+  }
+
+  function getSelectionAnchorRect(range) {
+    const rects = Array.from(range.getClientRects()).filter((rect) => rect.width || rect.height);
+    if (rects.length) {
+      return rects[rects.length - 1];
+    }
+
+    const boundingRect = range.getBoundingClientRect();
+    if (boundingRect.width || boundingRect.height) {
+      return boundingRect;
+    }
+
+    return null;
+  }
+
+  function handleSelectionCopy(event) {
+    if (!event.clipboardData || !window.ChatGPTToNotionConverter?.convertFragment) {
+      return;
+    }
+
+    const selectionContext = resolveAssistantSelection(window.getSelection());
+    if (!selectionContext) {
+      return;
+    }
+
+    if (!selectionTouchesMath(selectionContext.range, selectionContext.contentRoot)) {
+      return;
+    }
+
+    const prepared = prepareSelectionCopy(selectionContext);
+    if (!prepared) {
+      return;
+    }
+
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", prepared.text);
+    event.clipboardData.setData("text/html", prepared.html);
+
+    void persistLastCopy(prepared.result, prepared.payload).catch((error) => {
+      console.error("ChatGPT to Notion selection copy persist failed", error);
+    });
+  }
+
+  async function copySelectionContext(selectionContext, button) {
+    const prepared = prepareSelectionCopy(selectionContext);
+    if (!prepared) {
+      showToast("Nothing to copy from this selection.");
+      return;
+    }
+
+    const previousText = button?.textContent || "Copy selection";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Copying...";
+    }
+
+    try {
+      await writeClipboard(prepared.result, prepared.payload);
+      await persistLastCopy(prepared.result, prepared.payload);
+      showToast("Selected content copied for Notion.");
+      selectionCopyContext = null;
+      removeSelectionCopyButton();
+    } catch (error) {
+      console.error("ChatGPT to Notion selection copy failed", error);
+      showToast("Selection copy failed. Check the browser console.");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = previousText;
+      }
+    }
+  }
+
+  function prepareSelectionCopy(selectionContext) {
+    if (!selectionContext || !window.ChatGPTToNotionConverter?.convertFragment) {
+      return null;
+    }
+
+    const expandedRange = expandRangeAroundMath(selectionContext.range);
+    const fragment = expandedRange.cloneContents();
+    const container = document.createElement("div");
+    container.appendChild(fragment);
+
+    const result = window.ChatGPTToNotionConverter.convertFragment(container);
+    if (!result?.markdown || !result.blocks?.length) {
+      return null;
+    }
+
+    const payload = {
+      copiedAt: new Date().toISOString(),
+      blocks: result.blocks,
+      markdown: result.markdown
+    };
+    const marker = encodePayload(payload);
+
+    return {
+      result,
+      payload,
+      text: wrapClipboardText(result.markdown, marker),
+      html: wrapClipboardHtml(result.html, marker)
+    };
+  }
+
+  function resolveAssistantSelection(selection) {
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const contentRoot = closestContentRoot(range.startContainer);
+    const endContentRoot = closestContentRoot(range.endContainer);
+
+    if (!contentRoot || contentRoot !== endContentRoot) {
+      return null;
+    }
+
+    if (!contentRoot.closest(MESSAGE_SELECTOR) || !isAssistantMessage(contentRoot.closest(MESSAGE_SELECTOR))) {
+      return null;
+    }
+
+    if (isEditableNode(selection.anchorNode) || isEditableNode(selection.focusNode)) {
+      return null;
+    }
+
+    return {
+      range,
+      contentRoot
+    };
+  }
+
+  function closestContentRoot(node) {
+    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    return element?.closest?.(CONTENT_SELECTOR) || null;
+  }
+
+  function selectionTouchesMath(range, contentRoot) {
+    if (!range || !contentRoot) {
+      return false;
+    }
+
+    if (closestMathElement(range.startContainer) || closestMathElement(range.endContainer)) {
+      return true;
+    }
+
+    const mathElements = contentRoot.querySelectorAll(MATH_SELECTOR);
+
+    for (const element of mathElements) {
+      try {
+        if (range.intersectsNode(element)) {
+          return true;
+        }
+      } catch (error) {
+        console.warn("Failed to inspect selection math intersection", error);
+      }
+    }
+
+    return false;
+  }
+
+  function expandRangeAroundMath(range) {
+    const expandedRange = range.cloneRange();
+    const startMath = closestMathElement(expandedRange.startContainer);
+    const endMath = closestMathElement(expandedRange.endContainer);
+
+    if (startMath) {
+      expandedRange.setStartBefore(startMath);
+    }
+
+    if (endMath) {
+      expandedRange.setEndAfter(endMath);
+    }
+
+    return expandedRange;
+  }
+
+  function closestMathElement(node) {
+    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    return element?.closest?.(MATH_SELECTOR) || null;
+  }
+
+  function isEditableNode(node) {
+    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    if (!element) {
+      return false;
+    }
+
+    if (element.isContentEditable) {
+      return true;
+    }
+
+    return Boolean(element.closest("input, textarea, [contenteditable='true'], [role='textbox']"));
   }
 
   async function writeClipboard(result, payload) {
