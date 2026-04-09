@@ -145,6 +145,40 @@
         contentRoot?.parentElement ||
         message
       );
+    },
+    mountButton({ owner, anchor, button, contentRoot }) {
+      const slotOwner =
+        (contentRoot instanceof Element ? contentRoot.parentElement : null) || owner || anchor || contentRoot;
+
+      if (!slotOwner) {
+        anchor?.appendChild?.(button);
+        return button;
+      }
+
+      let slot =
+        slotOwner.querySelector?.("[data-ai-to-notion-action-slot='chatgpt']") ||
+        owner?.querySelector?.("[data-ai-to-notion-action-slot='chatgpt']") ||
+        null;
+
+      if (!slot) {
+        slot = document.createElement("div");
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--chatgpt";
+        slot.setAttribute("data-ai-to-notion-action-slot", "chatgpt");
+      } else {
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--chatgpt";
+      }
+
+      if (contentRoot instanceof Element && contentRoot.parentElement === slotOwner) {
+        if (slot.parentElement !== slotOwner || slot.previousSibling !== contentRoot) {
+          slotOwner.insertBefore(slot, contentRoot.nextSibling);
+        }
+      } else if (slot.parentElement !== slotOwner) {
+        slotOwner.appendChild(slot);
+      }
+
+      button.classList.add("chatgpt-to-notion-button--wide");
+      slot.replaceChildren(button);
+      return button;
     }
   });
 

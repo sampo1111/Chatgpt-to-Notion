@@ -47,6 +47,11 @@
   clear: both;
 }
 
+.chatgpt-to-notion-action-slot--chatgpt {
+  display: block;
+  clear: both;
+}
+
 .chatgpt-to-notion-button--wide {
   display: flex;
   width: 100%;
