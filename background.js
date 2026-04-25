@@ -974,7 +974,7 @@ function blockToAppendNodes(block) {
     case "list":
       return block.items.map((item) => createListItemNode(block.ordered, item));
     case "table":
-      return [createAppendNode(createTableFallbackBlock(block))];
+      return createTableAppendNodes(block);
     default:
       return [];
   }
@@ -1047,6 +1047,68 @@ function createImageFallbackBlock(block) {
   };
 }
 
+function createTableAppendNodes(block) {
+  const normalizedRows = normalizeTableRows(block?.rows || []);
+
+  if (!normalizedRows.length) {
+    return [createAppendNode(createTableFallbackBlock(block))];
+  }
+
+  const [firstRow, ...remainingRows] = normalizedRows;
+
+  return [
+    createAppendNode(
+      {
+        object: "block",
+        type: "table",
+        table: {
+          table_width: firstRow.length,
+          has_column_header: block?.hasHeader === true,
+          has_row_header: false,
+          children: [createTableRowBlock(firstRow)]
+        }
+      },
+      remainingRows.map((row) => createAppendNode(createTableRowBlock(row)))
+    )
+  ];
+}
+
+function createTableRowBlock(row) {
+  return {
+    object: "block",
+    type: "table_row",
+    table_row: {
+      cells: row.map((cell) => inlineChildrenToRichText(cell.children))
+    }
+  };
+}
+
+function normalizeTableRows(rows) {
+  const sourceRows = (Array.isArray(rows) ? rows : []).filter((row) => Array.isArray(row) && row.length);
+
+  if (!sourceRows.length) {
+    return [];
+  }
+
+  const tableWidth = Math.max(...sourceRows.map((row) => row.length));
+
+  return sourceRows.map((row) => {
+    const normalizedRow = [];
+
+    for (let index = 0; index < tableWidth; index += 1) {
+      normalizedRow.push(normalizeTableCell(row[index]));
+    }
+
+    return normalizedRow;
+  });
+}
+
+function normalizeTableCell(cell) {
+  return {
+    children: Array.isArray(cell?.children) ? cell.children : []
+  };
+}
+
 function createTableFallbackBlock(block) {
   const lines = [];
 
@@ -1089,11 +1151,44 @@ function countAppendNodes(nodes) {
   let total = 0;
 
   for (const node of nodes || []) {
-    total += 1;
-    total += countAppendNodes(node.children || []);
+    total += countAppendNode(node);
   }
 
   return total;
+}
+
+function countAppendNode(node) {
+  if (!node) {
+    return 0;
+  }
+
+  return 1 + countEmbeddedPayloadChildren(node.payload) + countAppendNodes(node.children || []);
+}
+
+function countEmbeddedPayloadChildren(payload) {
+  const embeddedChildren = extractEmbeddedPayloadChildren(payload);
+  let total = 0;
+
+  for (const child of embeddedChildren) {
+    total += 1;
+    total += countEmbeddedPayloadChildren(child);
+  }
+
+  return total;
+}
+
+function extractEmbeddedPayloadChildren(payload) {
+  if (!payload || typeof payload !== "object" || !payload.type) {
+    return [];
+  }
+
+  const typePayload = payload[payload.type];
+
+  if (!typePayload || typeof typePayload !== "object" || !Array.isArray(typePayload.children)) {
+    return [];
+  }
+
+  return typePayload.children;
 }
 
 function inlineChildrenToRichText(children) {
