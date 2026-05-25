@@ -11,22 +11,30 @@
   gap: calc(6px * var(--ai-to-notion-button-scale));
   margin-left: calc(8px * var(--ai-to-notion-button-scale));
   padding: calc(6px * var(--ai-to-notion-button-scale)) calc(10px * var(--ai-to-notion-button-scale));
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(var(--ai-to-notion-copy-border-rgb, 15, 23, 42), 0.12);
   border-radius: 999px;
-  background: linear-gradient(135deg, #fffef5, #fff7dd);
-  color: #7c2d12;
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-copy-start, #fffef5),
+    var(--ai-to-notion-copy-end, #fff7dd)
+  );
+  color: var(--ai-to-notion-copy-text, #7c2d12);
   font-size: calc(12px * var(--ai-to-notion-button-scale));
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(124, 45, 18, 0.08);
+  box-shadow: 0 6px 18px rgba(var(--ai-to-notion-copy-shadow-rgb, 124, 45, 18), 0.08);
   transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
 .chatgpt-to-notion-button:hover:not(:disabled) {
   transform: translateY(calc(-1px * var(--ai-to-notion-button-scale)));
-  box-shadow: 0 8px 20px rgba(124, 45, 18, 0.12);
-  background: linear-gradient(135deg, #fff8db, #ffedba);
+  box-shadow: 0 8px 20px rgba(var(--ai-to-notion-copy-shadow-rgb, 124, 45, 18), 0.12);
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-copy-hover-start, #fff8db),
+    var(--ai-to-notion-copy-hover-end, #ffedba)
+  );
 }
 
 .chatgpt-to-notion-button:disabled {
@@ -50,6 +58,84 @@
 .chatgpt-to-notion-action-slot--chatgpt {
   display: block;
   clear: both;
+}
+
+.chatgpt-to-notion-floating-controls {
+  position: fixed;
+  right: calc(24px * var(--ai-to-notion-button-scale));
+  bottom: calc(24px * var(--ai-to-notion-button-scale));
+  z-index: 99998;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(8px * var(--ai-to-notion-button-scale));
+}
+
+.chatgpt-to-notion-quick-toggle {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--ai-to-notion-button-scale));
+  padding: calc(4px * var(--ai-to-notion-button-scale)) calc(8px * var(--ai-to-notion-button-scale));
+  border: 1px solid rgba(var(--ai-to-notion-toggle-border-rgb, 15, 23, 42), 0.1);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f8fafc, #eef2f7);
+  color: #475569;
+  font-size: calc(10px * var(--ai-to-notion-button-scale));
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.chatgpt-to-notion-quick-toggle:hover:not(:disabled) {
+  transform: translateY(calc(-1px * var(--ai-to-notion-button-scale)));
+  box-shadow: 0 10px 22px rgba(var(--ai-to-notion-toggle-shadow-rgb, 71, 85, 105), 0.12);
+}
+
+.chatgpt-to-notion-quick-toggle[data-enabled="true"] {
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-toggle-start, #eefcf4),
+    var(--ai-to-notion-toggle-end, #d8f7e5)
+  );
+  color: var(--ai-to-notion-toggle-text, #166534);
+  border-color: rgba(var(--ai-to-notion-toggle-border-rgb, 22, 101, 52), 0.12);
+}
+
+.chatgpt-to-notion-quick-toggle[data-enabled="true"]:hover:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-toggle-hover-start, #e0f8e8),
+    var(--ai-to-notion-toggle-hover-end, #caefd9)
+  );
+}
+
+.chatgpt-to-notion-quick-toggle[data-enabled="false"] {
+  background: linear-gradient(135deg, #f8fafc, #e8edf4);
+  color: #475569;
+  border-color: rgba(71, 85, 105, 0.12);
+}
+
+.chatgpt-to-notion-quick-toggle:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.chatgpt-to-notion-quick-toggle-label {
+  opacity: 0.82;
+}
+
+.chatgpt-to-notion-quick-toggle-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(30px * var(--ai-to-notion-button-scale));
+  padding: calc(3px * var(--ai-to-notion-button-scale)) calc(6px * var(--ai-to-notion-button-scale));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  font-size: calc(9px * var(--ai-to-notion-button-scale));
+  letter-spacing: 0.04em;
 }
 
 .chatgpt-to-notion-button--wide {
@@ -84,31 +170,35 @@
 }
 
 .chatgpt-to-notion-floating-button {
-  position: fixed;
-  right: calc(24px * var(--ai-to-notion-button-scale));
-  bottom: calc(24px * var(--ai-to-notion-button-scale));
-  z-index: 99998;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: calc(140px * var(--ai-to-notion-button-scale));
   padding: calc(10px * var(--ai-to-notion-button-scale)) calc(14px * var(--ai-to-notion-button-scale));
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(var(--ai-to-notion-paste-border-rgb, 15, 23, 42), 0.12);
   border-radius: 999px;
-  background: linear-gradient(135deg, #effcf6, #d9fbe8);
-  color: #166534;
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-paste-start, #effcf6),
+    var(--ai-to-notion-paste-end, #d9fbe8)
+  );
+  color: var(--ai-to-notion-paste-text, #166534);
   font-size: calc(13px * var(--ai-to-notion-button-scale));
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 14px 32px rgba(22, 101, 52, 0.18);
+  box-shadow: 0 14px 32px rgba(var(--ai-to-notion-paste-shadow-rgb, 22, 101, 52), 0.18);
   transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
 .chatgpt-to-notion-floating-button:hover:not(:disabled) {
   transform: translateY(calc(-1px * var(--ai-to-notion-button-scale)));
-  box-shadow: 0 18px 36px rgba(22, 101, 52, 0.22);
-  background: linear-gradient(135deg, #dff7e8, #c4f1d6);
+  box-shadow: 0 18px 36px rgba(var(--ai-to-notion-paste-shadow-rgb, 22, 101, 52), 0.22);
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-paste-hover-start, #dff7e8),
+    var(--ai-to-notion-paste-hover-end, #c4f1d6)
+  );
 }
 
 .chatgpt-to-notion-floating-button[data-busy="true"] {
@@ -125,22 +215,30 @@
   align-items: center;
   justify-content: center;
   padding: calc(8px * var(--ai-to-notion-button-scale)) calc(12px * var(--ai-to-notion-button-scale));
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(var(--ai-to-notion-selection-border-rgb, 15, 23, 42), 0.12);
   border-radius: 999px;
-  background: linear-gradient(135deg, #fff8e1, #ffe9b5);
-  color: #9a3412;
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-selection-start, #fff8e1),
+    var(--ai-to-notion-selection-end, #ffe9b5)
+  );
+  color: var(--ai-to-notion-selection-text, #9a3412);
   font-size: calc(12px * var(--ai-to-notion-button-scale));
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 14px 30px rgba(146, 64, 14, 0.18);
+  box-shadow: 0 14px 30px rgba(var(--ai-to-notion-selection-shadow-rgb, 146, 64, 14), 0.18);
   transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
 .chatgpt-to-notion-selection-button:hover:not(:disabled) {
   transform: translateY(calc(-1px * var(--ai-to-notion-button-scale)));
-  box-shadow: 0 16px 34px rgba(146, 64, 14, 0.22);
-  background: linear-gradient(135deg, #fff2c9, #ffde95);
+  box-shadow: 0 16px 34px rgba(var(--ai-to-notion-selection-shadow-rgb, 146, 64, 14), 0.22);
+  background: linear-gradient(
+    135deg,
+    var(--ai-to-notion-selection-hover-start, #fff2c9),
+    var(--ai-to-notion-selection-hover-end, #ffde95)
+  );
 }
 
 .chatgpt-to-notion-selection-button:disabled {

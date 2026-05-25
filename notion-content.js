@@ -1,6 +1,8 @@
 (function () {
   const SETTINGS_KEY = "chatgptToNotionSettings";
+  const CONTROLS_ID = "chatgpt-to-notion-floating-controls";
   const BUTTON_ID = "chatgpt-to-notion-paste-button";
+  const TOGGLE_ID = "chatgpt-to-notion-feature-toggle";
   const TOAST_ID = "chatgpt-to-notion-toast";
   const DEFAULT_PASTE_BUTTON_TEXT = "Paste to Notion";
   const TEXT_PAYLOAD_HEADER = "[[CHATGPT_TO_NOTION]]";
@@ -18,13 +20,16 @@
   let extensionReloadScheduled = false;
   let uiState = {
     enableFeature: true,
+    enableCopyButton: true,
     enablePasteButton: true,
-    buttonScale: 1
+    buttonScale: 1,
+    buttonTheme: null
   };
 
   async function boot() {
     await loadUiState();
     applyButtonScale();
+    applyButtonTheme();
     syncFloatingButtons();
     observePage();
     registerCursorTracking();
@@ -46,7 +51,10 @@
   }
 
   function syncFloatingButtons() {
+    ensureFloatingControls();
+    injectFeatureToggle();
     injectPasteButton();
+    cleanupFloatingControls();
   }
 
   function scheduleFloatingButtonsSync() {
@@ -67,30 +75,19 @@
       return;
     }
 
-    if (document.getElementById(BUTTON_ID)) {
+    const controls = ensureFloatingControls();
+    if (!controls) {
       return;
     }
 
-    const button = document.createElement("button");
-    button.id = BUTTON_ID;
-    button.type = "button";
-    button.className = "chatgpt-to-notion-floating-button";
-    button.textContent = DEFAULT_PASTE_BUTTON_TEXT;
+    let button = document.getElementById(BUTTON_ID);
+    if (!button) {
+      button = createPasteButton();
+    }
 
-    button.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-    });
-
-    button.addEventListener("click", async () => {
-      if (activePasteOperation) {
-        await cancelActivePaste();
-        return;
-      }
-
-      await appendStoredReply(button);
-    });
-
-    document.body.appendChild(button);
+    if (button.parentElement !== controls) {
+      controls.appendChild(button);
+    }
   }
 
   function registerPasteHandler() {
@@ -159,9 +156,12 @@
 
       const nextSettings = changes[SETTINGS_KEY].newValue || {};
       uiState.enableFeature = resolveFeatureEnabled(nextSettings);
+      uiState.enableCopyButton = nextSettings.enableCopyButton !== false;
       uiState.enablePasteButton = nextSettings.enablePasteButton !== false;
       uiState.buttonScale = normalizeButtonScale(nextSettings.buttonScale);
+      uiState.buttonTheme = normalizeButtonTheme(nextSettings.buttonTheme);
       applyButtonScale();
+      applyButtonTheme();
       scheduleFloatingButtonsSync();
     });
   }
@@ -181,8 +181,10 @@
     const stored = await chrome.storage.local.get([SETTINGS_KEY]);
     const settings = stored[SETTINGS_KEY] || {};
     uiState.enableFeature = resolveFeatureEnabled(settings);
+    uiState.enableCopyButton = settings.enableCopyButton !== false;
     uiState.enablePasteButton = settings.enablePasteButton !== false;
     uiState.buttonScale = normalizeButtonScale(settings.buttonScale);
+    uiState.buttonTheme = normalizeButtonTheme(settings.buttonTheme);
   }
 
   function resolveFeatureEnabled(settings) {
@@ -201,6 +203,10 @@
     document.documentElement.style.setProperty("--ai-to-notion-button-scale", String(uiState.buttonScale));
   }
 
+  function applyButtonTheme() {
+    window.AIToNotionButtonTheme?.applyButtonThemeVariables?.(uiState.buttonTheme, document.documentElement);
+  }
+
   function normalizeButtonScale(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -210,12 +216,188 @@
     return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
   }
 
+  function normalizeButtonTheme(rawTheme) {
+    return window.AIToNotionButtonTheme?.normalizeThemeSettings?.(rawTheme) || null;
+  }
+
   function removePasteButton() {
     document.getElementById(BUTTON_ID)?.remove();
   }
 
   function shouldShowPasteButton() {
     return uiState.enableFeature && uiState.enablePasteButton && isNotionWindowActive();
+  }
+
+  function ensureFloatingControls() {
+    if (!shouldShowFloatingControls()) {
+      return null;
+    }
+
+    let controls = document.getElementById(CONTROLS_ID);
+    if (controls) {
+      return controls;
+    }
+
+    controls = document.createElement("div");
+    controls.id = CONTROLS_ID;
+    controls.className = "chatgpt-to-notion-floating-controls";
+    document.body.appendChild(controls);
+    return controls;
+  }
+
+  function shouldShowFloatingControls() {
+    return shouldShowFeatureToggle() || shouldShowPasteButton();
+  }
+
+  function shouldShowFeatureToggle() {
+    return isNotionWindowActive();
+  }
+
+  function cleanupFloatingControls() {
+    const controls = document.getElementById(CONTROLS_ID);
+    if (!controls) {
+      return;
+    }
+
+    if (controls.children.length) {
+      return;
+    }
+
+    controls.remove();
+  }
+
+  function createPasteButton() {
+    const button = document.createElement("button");
+    button.id = BUTTON_ID;
+    button.type = "button";
+    button.className = "chatgpt-to-notion-floating-button";
+    button.textContent = DEFAULT_PASTE_BUTTON_TEXT;
+
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+
+    button.addEventListener("click", async () => {
+      if (activePasteOperation) {
+        await cancelActivePaste();
+        return;
+      }
+
+      await appendStoredReply(button);
+    });
+
+    return button;
+  }
+
+  function injectFeatureToggle() {
+    if (!shouldShowFeatureToggle()) {
+      removeFeatureToggle();
+      return;
+    }
+
+    const controls = ensureFloatingControls();
+    if (!controls) {
+      return;
+    }
+
+    let toggle = document.getElementById(TOGGLE_ID);
+    if (!toggle) {
+      toggle = createFeatureToggle();
+    }
+
+    updateFeatureToggle(toggle);
+
+    if (toggle.parentElement !== controls || toggle !== controls.firstElementChild) {
+      controls.insertBefore(toggle, controls.firstChild);
+    }
+  }
+
+  function removeFeatureToggle() {
+    document.getElementById(TOGGLE_ID)?.remove();
+  }
+
+  function createFeatureToggle() {
+    const toggle = document.createElement("button");
+    const label = document.createElement("span");
+    const state = document.createElement("span");
+
+    toggle.id = TOGGLE_ID;
+    toggle.type = "button";
+    toggle.className = "chatgpt-to-notion-quick-toggle";
+    toggle.setAttribute("data-chatgpt-to-notion-quick-toggle", "true");
+
+    label.className = "chatgpt-to-notion-quick-toggle-label";
+    label.textContent = "AI to Notion";
+
+    state.className = "chatgpt-to-notion-quick-toggle-state";
+
+    toggle.append(label, state);
+    toggle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    toggle.addEventListener("click", async () => {
+      await toggleFeatureQuick(toggle);
+    });
+
+    return toggle;
+  }
+
+  function updateFeatureToggle(toggle) {
+    if (!toggle) {
+      return;
+    }
+
+    toggle.dataset.enabled = uiState.enableFeature ? "true" : "false";
+    toggle.setAttribute("aria-pressed", uiState.enableFeature ? "true" : "false");
+    toggle.title = uiState.enableFeature
+      ? "Disable ChatGPT to Notion quickly"
+      : "Enable ChatGPT to Notion quickly";
+
+    const state = toggle.querySelector(".chatgpt-to-notion-quick-toggle-state");
+    if (state) {
+      state.textContent = uiState.enableFeature ? "ON" : "OFF";
+    }
+  }
+
+  async function toggleFeatureQuick(toggle) {
+    const nextEnabled = !uiState.enableFeature;
+    toggle.disabled = true;
+
+    try {
+      if (!nextEnabled && activePasteOperation) {
+        await cancelActivePaste();
+      }
+
+      const response = await sendRuntimeMessage({
+        type: "saveUiSettings",
+        settings: {
+          enableFeature: nextEnabled,
+          enableCopyButton: uiState.enableCopyButton,
+          enablePasteButton: uiState.enablePasteButton,
+          buttonScale: uiState.buttonScale,
+          buttonTheme: uiState.buttonTheme
+        }
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "Quick toggle failed.");
+      }
+
+      uiState.enableFeature = response.enableFeature !== false;
+      uiState.enableCopyButton = response.enableCopyButton !== false;
+      uiState.enablePasteButton = response.enablePasteButton !== false;
+      uiState.buttonScale = normalizeButtonScale(response.buttonScale);
+      uiState.buttonTheme = normalizeButtonTheme(response.buttonTheme);
+      toggle.disabled = false;
+      applyButtonScale();
+      applyButtonTheme();
+      syncFloatingButtons();
+      showToast(uiState.enableFeature ? "ChatGPT to Notion enabled." : "ChatGPT to Notion disabled.");
+    } catch (error) {
+      console.error("ChatGPT to Notion quick toggle failed", error);
+      showToast(error instanceof Error ? error.message : "Quick toggle failed.");
+      toggle.disabled = false;
+    }
   }
 
   function isNotionWindowActive() {

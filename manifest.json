@@ -27,6 +27,7 @@
         "https://gemini.google.com/*"
       ],
       "js": [
+        "button-theme.js",
         "source-providers.js",
         "converter.js",
         "content.js"
@@ -42,6 +43,7 @@
         "https://notion.so/*"
       ],
       "js": [
+        "button-theme.js",
         "notion-content.js"
       ],
       "css": [

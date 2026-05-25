@@ -12,6 +12,35 @@
   const enableFeatureInput = document.getElementById("enable-feature");
   const buttonSizeInput = document.getElementById("button-size");
   const buttonSizeValue = document.getElementById("button-size-value");
+  const resetButtonThemeButton = document.getElementById("reset-button-theme");
+  const defaultButtonTheme = window.AIToNotionButtonTheme?.normalizeThemeSettings?.() || {
+    copy: { start: "#fffef5", end: "#fff7dd", text: "#7c2d12" },
+    paste: { start: "#effcf6", end: "#d9fbe8", text: "#166534" },
+    selection: { start: "#fff8e1", end: "#ffe9b5", text: "#9a3412" },
+    toggle: { start: "#eefcf4", end: "#d8f7e5", text: "#166534" }
+  };
+  const buttonThemeInputs = {
+    copy: {
+      start: document.getElementById("copy-button-start-color"),
+      end: document.getElementById("copy-button-end-color"),
+      text: document.getElementById("copy-button-text-color")
+    },
+    paste: {
+      start: document.getElementById("paste-button-start-color"),
+      end: document.getElementById("paste-button-end-color"),
+      text: document.getElementById("paste-button-text-color")
+    },
+    selection: {
+      start: document.getElementById("selection-button-start-color"),
+      end: document.getElementById("selection-button-end-color"),
+      text: document.getElementById("selection-button-text-color")
+    },
+    toggle: {
+      start: document.getElementById("toggle-button-start-color"),
+      end: document.getElementById("toggle-button-end-color"),
+      text: document.getElementById("toggle-button-text-color")
+    }
+  };
   let isBusy = false;
   let hasUndoAvailable = false;
 
@@ -47,6 +76,19 @@
       await saveUiSettings();
     });
 
+    for (const group of Object.values(buttonThemeInputs)) {
+      for (const input of Object.values(group)) {
+        input.addEventListener("change", async () => {
+          await saveUiSettings();
+        });
+      }
+    }
+
+    resetButtonThemeButton.addEventListener("click", async () => {
+      applyButtonThemeToInputs(defaultButtonTheme);
+      await saveUiSettings();
+    });
+
     undoButton.addEventListener("click", async () => {
       await undoLastPaste();
     });
@@ -73,6 +115,9 @@
     enablePasteButtonInput.checked = settings?.enablePasteButton !== false;
     enableFeatureInput.checked = settings?.enableFeature !== false;
     buttonSizeInput.value = String(Math.round((Number(settings?.buttonScale) || 1) * 100));
+    applyButtonThemeToInputs(
+      window.AIToNotionButtonTheme?.normalizeThemeSettings?.(settings?.buttonTheme) || defaultButtonTheme
+    );
     updateButtonSizeLabel();
     syncFeatureDependentControls();
 
@@ -105,7 +150,7 @@
         throw new Error(response?.error || "토큰을 저장하지 못했습니다.");
       }
 
-      connectionStatus.textContent = response.hasToken ? "상태: 토큰 저장됨" : "상태: 토큰 삭제됨";
+      connectionStatus.textContent = response.hasToken ? "상태: 토큰 저장됨" : "상태: 토큰 제거됨";
       await refreshStatus();
     });
   }
@@ -133,7 +178,8 @@
           enableCopyButton: enableCopyButtonInput.checked,
           enablePasteButton: enablePasteButtonInput.checked,
           enableFeature: enableFeatureInput.checked,
-          buttonScale: Number(buttonSizeInput.value) / 100
+          buttonScale: Number(buttonSizeInput.value) / 100,
+          buttonTheme: readButtonThemeFromInputs()
         }
       });
 
@@ -163,13 +209,44 @@
     buttonSizeValue.textContent = `${buttonSizeInput.value}%`;
   }
 
+  function readButtonThemeFromInputs() {
+    const theme = {
+      copy: readButtonThemeSection("copy"),
+      paste: readButtonThemeSection("paste"),
+      selection: readButtonThemeSection("selection"),
+      toggle: readButtonThemeSection("toggle")
+    };
+
+    return window.AIToNotionButtonTheme?.normalizeThemeSettings?.(theme) || theme;
+  }
+
+  function readButtonThemeSection(sectionName) {
+    const section = buttonThemeInputs[sectionName];
+    return {
+      start: section.start.value,
+      end: section.end.value,
+      text: section.text.value
+    };
+  }
+
+  function applyButtonThemeToInputs(rawTheme) {
+    const theme = window.AIToNotionButtonTheme?.normalizeThemeSettings?.(rawTheme) || defaultButtonTheme;
+
+    for (const [sectionName, sectionTheme] of Object.entries(theme)) {
+      const sectionInputs = buttonThemeInputs[sectionName];
+      if (!sectionInputs) {
+        continue;
+      }
+
+      sectionInputs.start.value = sectionTheme.start;
+      sectionInputs.end.value = sectionTheme.end;
+      sectionInputs.text.value = sectionTheme.text;
+    }
+  }
+
   function syncFeatureDependentControls() {
     const featureEnabled = enableFeatureInput.checked;
-    const dependentControls = [
-      enableCopyButtonInput,
-      enablePasteButtonInput,
-      buttonSizeInput
-    ];
+    const dependentControls = [enableCopyButtonInput, enablePasteButtonInput, buttonSizeInput];
 
     for (const control of dependentControls) {
       control.disabled = isBusy || !featureEnabled;
@@ -201,6 +278,14 @@
     undoButton.disabled = busy || !hasUndoAvailable;
     tokenInput.disabled = busy;
     enableFeatureInput.disabled = busy;
+    resetButtonThemeButton.disabled = busy;
+
+    for (const group of Object.values(buttonThemeInputs)) {
+      for (const input of Object.values(group)) {
+        input.disabled = busy;
+      }
+    }
+
     syncFeatureDependentControls();
   }
 

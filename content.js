@@ -20,7 +20,8 @@
   let uiState = {
     enableFeature: true,
     enableCopyButton: true,
-    buttonScale: 1
+    buttonScale: 1,
+    buttonTheme: null
   };
   let selectionCopyContext = null;
   let selectionSyncScheduled = false;
@@ -34,6 +35,7 @@
 
     await loadUiState();
     applyButtonScale();
+    applyButtonTheme();
     injectButtons();
     observeConversation();
     observeSettings();
@@ -78,6 +80,8 @@
       uiState.enableCopyButton = nextSettings.enableCopyButton !== false;
       uiState.buttonScale = normalizeButtonScale(nextSettings.buttonScale);
       applyButtonScale();
+      uiState.buttonTheme = normalizeButtonTheme(nextSettings.buttonTheme);
+      applyButtonTheme();
       injectButtons();
       scheduleSelectionCopyButtonSync();
     });
@@ -107,6 +111,7 @@
     uiState.enableFeature = resolveFeatureEnabled(settings);
     uiState.enableCopyButton = settings.enableCopyButton !== false;
     uiState.buttonScale = normalizeButtonScale(settings.buttonScale);
+    uiState.buttonTheme = normalizeButtonTheme(settings.buttonTheme);
   }
 
   function resolveFeatureEnabled(settings) {
@@ -125,6 +130,10 @@
     document.documentElement.style.setProperty("--ai-to-notion-button-scale", String(uiState.buttonScale));
   }
 
+  function applyButtonTheme() {
+    window.AIToNotionButtonTheme?.applyButtonThemeVariables?.(uiState.buttonTheme, document.documentElement);
+  }
+
   function normalizeButtonScale(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -132,6 +141,10 @@
     }
 
     return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
+  }
+
+  function normalizeButtonTheme(rawTheme) {
+    return window.AIToNotionButtonTheme?.normalizeThemeSettings?.(rawTheme) || null;
   }
 
   function removeCopyButtons() {

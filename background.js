@@ -15,13 +15,36 @@ const DEFAULT_ANNOTATIONS = {
   code: false,
   color: "default"
 };
+const DEFAULT_BUTTON_THEME = Object.freeze({
+  copy: Object.freeze({
+    start: "#fffef5",
+    end: "#fff7dd",
+    text: "#7c2d12"
+  }),
+  paste: Object.freeze({
+    start: "#effcf6",
+    end: "#d9fbe8",
+    text: "#166534"
+  }),
+  selection: Object.freeze({
+    start: "#fff8e1",
+    end: "#ffe9b5",
+    text: "#9a3412"
+  }),
+  toggle: Object.freeze({
+    start: "#eefcf4",
+    end: "#d8f7e5",
+    text: "#166534"
+  })
+});
 const DEFAULT_SETTINGS = {
   notionToken: "",
   enableFeature: true,
   enableCopyButton: true,
   enableNotionPaste: true,
   enablePasteButton: true,
-  buttonScale: 1
+  buttonScale: 1,
+  buttonTheme: cloneDefaultButtonTheme()
 };
 const ACTIVE_APPEND_OPERATIONS = new Map();
 const SUPPORTED_CODE_LANGUAGES = new Set([
@@ -178,7 +201,8 @@ async function getNotionSettings() {
     enableCopyButton: settings.enableCopyButton,
     enableNotionPaste: settings.enableNotionPaste,
     enablePasteButton: settings.enablePasteButton,
-    buttonScale: settings.buttonScale
+    buttonScale: settings.buttonScale,
+    buttonTheme: settings.buttonTheme
   };
 }
 
@@ -199,7 +223,8 @@ async function saveUiSettings(nextSettings) {
     enableCopyButton: mergedSettings.enableCopyButton,
     enableNotionPaste: mergedSettings.enableNotionPaste,
     enablePasteButton: mergedSettings.enablePasteButton,
-    buttonScale: mergedSettings.buttonScale
+    buttonScale: mergedSettings.buttonScale,
+    buttonTheme: mergedSettings.buttonTheme
   };
 }
 
@@ -519,7 +544,8 @@ async function readSettings() {
       rawSettings.enablePasteButton === undefined
         ? DEFAULT_SETTINGS.enablePasteButton
         : Boolean(rawSettings.enablePasteButton),
-    buttonScale: normalizeButtonScale(rawSettings.buttonScale)
+    buttonScale: normalizeButtonScale(rawSettings.buttonScale),
+    buttonTheme: sanitizeButtonTheme(rawSettings.buttonTheme)
   };
 }
 
@@ -542,7 +568,8 @@ function sanitizeUiSettings(settings) {
       settings.enablePasteButton === undefined
         ? DEFAULT_SETTINGS.enablePasteButton
         : Boolean(settings.enablePasteButton),
-    buttonScale: normalizeButtonScale(settings.buttonScale)
+    buttonScale: normalizeButtonScale(settings.buttonScale),
+    buttonTheme: sanitizeButtonTheme(settings.buttonTheme)
   };
 }
 
@@ -553,6 +580,46 @@ function normalizeButtonScale(value) {
   }
 
   return Math.min(1.5, Math.max(0.5, Number(numeric.toFixed(2))));
+}
+
+function cloneDefaultButtonTheme() {
+  return {
+    copy: { ...DEFAULT_BUTTON_THEME.copy },
+    paste: { ...DEFAULT_BUTTON_THEME.paste },
+    selection: { ...DEFAULT_BUTTON_THEME.selection },
+    toggle: { ...DEFAULT_BUTTON_THEME.toggle }
+  };
+}
+
+function sanitizeButtonTheme(rawTheme) {
+  const theme = rawTheme && typeof rawTheme === "object" ? rawTheme : {};
+
+  return {
+    copy: sanitizeButtonThemeSection(theme.copy, DEFAULT_BUTTON_THEME.copy),
+    paste: sanitizeButtonThemeSection(theme.paste, DEFAULT_BUTTON_THEME.paste),
+    selection: sanitizeButtonThemeSection(theme.selection, DEFAULT_BUTTON_THEME.selection),
+    toggle: sanitizeButtonThemeSection(theme.toggle, DEFAULT_BUTTON_THEME.toggle)
+  };
+}
+
+function sanitizeButtonThemeSection(rawSection, defaults) {
+  const section = rawSection && typeof rawSection === "object" ? rawSection : {};
+
+  return {
+    start: normalizeHexColor(section.start, defaults.start),
+    end: normalizeHexColor(section.end, defaults.end),
+    text: normalizeHexColor(section.text, defaults.text)
+  };
+}
+
+function normalizeHexColor(value, fallback) {
+  const text = String(value || "").trim();
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(text)) {
+    return fallback;
+  }
+
+  return text.toLowerCase();
 }
 
 async function resolveAppendTarget({ pageId, anchorBlockId, token, signal }) {

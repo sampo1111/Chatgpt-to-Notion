@@ -9,7 +9,7 @@
   <body>
     <main class="popup">
       <h1>Chatgpt to Notion</h1>
-      <p class="lead">ChatGPT 또는 Gemini에서 복사하고 Notion에 붙여넣을 수 있도록 도와주는 확장입니다.</p>
+      <p class="lead">ChatGPT 또는 Gemini에서 복사하고 Notion에 붙여넣기 쉽게 정리해 주는 확장입니다.</p>
 
       <label class="field">
         <span>Notion Integration Token</span>
@@ -28,7 +28,7 @@
           <label class="toggle-row">
             <span>
               <strong>기능 활성화</strong>
-              <small>복사와 붙여넣기 기능 전체를 켜고 끕니다</small>
+              <small>복사와 붙여넣기 기능 전체를 켜고 끕니다.</small>
             </span>
             <span class="toggle-switch">
               <input id="enable-feature" type="checkbox">
@@ -39,7 +39,7 @@
           <label class="toggle-row">
             <span>
               <strong>복사 버튼</strong>
-              <small>ChatGPT/Gemini 답변 옆의 Copy 버튼 표시</small>
+              <small>ChatGPT/Gemini 답변 아래 Copy for Notion 버튼을 표시합니다.</small>
             </span>
             <span class="toggle-switch">
               <input id="enable-copy-button" type="checkbox">
@@ -50,7 +50,7 @@
           <label class="toggle-row">
             <span>
               <strong>Paste to Notion 버튼</strong>
-              <small>Notion 우하단 Paste 버튼 표시 여부</small>
+              <small>Notion 우하단 Paste to Notion 버튼을 표시합니다.</small>
             </span>
             <span class="toggle-switch">
               <input id="enable-paste-button" type="checkbox">
@@ -71,17 +71,98 @@
             <span>크게</span>
           </div>
         </section>
+
+        <section class="theme-panel">
+          <div class="theme-panel-header">
+            <span>버튼 색상</span>
+            <button id="reset-button-theme" type="button" class="ghost">기본값 복원</button>
+          </div>
+
+          <div class="theme-grid">
+            <section class="theme-card">
+              <strong>Copy 버튼</strong>
+              <div class="theme-card-inputs">
+                <label class="color-field">
+                  <span>시작</span>
+                  <input id="copy-button-start-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>끝</span>
+                  <input id="copy-button-end-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>글자</span>
+                  <input id="copy-button-text-color" type="color">
+                </label>
+              </div>
+            </section>
+
+            <section class="theme-card">
+              <strong>Paste 버튼</strong>
+              <div class="theme-card-inputs">
+                <label class="color-field">
+                  <span>시작</span>
+                  <input id="paste-button-start-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>끝</span>
+                  <input id="paste-button-end-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>글자</span>
+                  <input id="paste-button-text-color" type="color">
+                </label>
+              </div>
+            </section>
+
+            <section class="theme-card">
+              <strong>선택 버튼</strong>
+              <div class="theme-card-inputs">
+                <label class="color-field">
+                  <span>시작</span>
+                  <input id="selection-button-start-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>끝</span>
+                  <input id="selection-button-end-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>글자</span>
+                  <input id="selection-button-text-color" type="color">
+                </label>
+              </div>
+            </section>
+
+            <section class="theme-card">
+              <strong>빠른 토글</strong>
+              <div class="theme-card-inputs">
+                <label class="color-field">
+                  <span>시작</span>
+                  <input id="toggle-button-start-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>끝</span>
+                  <input id="toggle-button-end-color" type="color">
+                </label>
+                <label class="color-field">
+                  <span>글자</span>
+                  <input id="toggle-button-text-color" type="color">
+                </label>
+              </div>
+            </section>
+          </div>
+        </section>
       </details>
 
       <section class="status">
         <div id="token-status">토큰: 저장되지 않음</div>
         <div id="copy-status">최근 캡처: 없음</div>
-        <div id="connection-status">상태: 미확인</div>
+        <div id="connection-status">상태: 확인 전</div>
       </section>
 
       <section class="undo-panel">
         <div class="undo-copy">
-          <strong>응급 Undo</strong>
+          <strong>긴급 Undo</strong>
           <p>Undo는 Notion API로 블록을 하나씩 지우기 때문에 느립니다. 문서가 망가졌을 때만 사용하세요.</p>
           <div id="undo-status">마지막 붙여넣기: 없음</div>
         </div>
@@ -96,6 +177,7 @@
       </section>
     </main>
 
+    <script src="button-theme.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
