@@ -1,6 +1,6 @@
 # Chatgpt to Notion
 
-ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제를 줄여 주는 크롬 확장 프로그램입니다.
+ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 문제를 줄여 주는 크롬 확장 프로그램입니다.
 
 기존에는 `ε`, `\cdot`, `a+b=b+a` 같은 수식이 일반 텍스트처럼 깨지거나, 줄바꿈이 이상하게 들어가서 직접 다시 정리해야 했습니다.  
 이 확장은 답변을 복사한 뒤 Notion에 붙여넣을 때 인라인 수식과 수식 블록을 최대한 Notion 형식에 맞게 복원해 줍니다.
@@ -17,6 +17,8 @@ ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제�
   - `https://chat.openai.com/*`
 - Gemini
   - `https://gemini.google.com/*`
+- Claude
+  - `https://claude.ai/*`
 - Notion
   - `https://www.notion.so/*`
   - `https://notion.so/*`
@@ -25,7 +27,7 @@ ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제�
 
 1. 크롬에서 이 확장을 설치합니다.
 2. Notion Integration Token을 팝업에 저장합니다.
-3. ChatGPT 또는 Gemini에서 `Copy for Notion`을 누릅니다.
+3. ChatGPT, Gemini 또는 Claude에서 `Copy for Notion`을 누릅니다.
 4. Notion에서 `Ctrl+V`를 누르거나 `Paste to Notion` 버튼을 누릅니다.
 
 ## 설치 방법
@@ -50,7 +52,7 @@ ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제�
 
 ### 답변 전체 복사
 
-1. ChatGPT 또는 Gemini 답변 아래 `Copy for Notion` 버튼을 누릅니다.
+1. ChatGPT, Gemini 또는 Claude 답변 아래 `Copy for Notion` 버튼을 누릅니다.
 2. Notion에서 원하는 블록에 커서를 둡니다.
 3. `Ctrl+V`를 누르거나 `Paste to Notion` 버튼을 누릅니다.
 
@@ -72,11 +74,11 @@ ChatGPT나 Gemini 답변을 Notion으로 옮길 때 수식이 깨지는 문제�
   - 복사와 붙여넣기 기능 전체를 한 번에 켜고 끕니다.
   - 꺼지면 아래 옵션들도 함께 비활성화됩니다.
 - `복사 버튼`
-  - ChatGPT/Gemini 답변 옆의 `Copy for Notion` 버튼 표시 여부
+  - ChatGPT/Gemini/Claude 답변 옆의 `Copy for Notion` 버튼 표시 여부
 - `Paste to Notion 버튼`
   - Notion 우하단의 `Paste to Notion` 버튼 표시 여부
 - `페이지 버튼 크기`
-  - ChatGPT, Gemini, Notion 페이지에 보이는 확장 버튼 크기를 `50% ~ 150%` 범위에서 조절
+  - ChatGPT, Gemini, Claude, Notion 페이지에 보이는 확장 버튼 크기를 `50% ~ 150%` 범위에서 조절
 
 ## 응급 Undo
 

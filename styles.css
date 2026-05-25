@@ -55,7 +55,25 @@
   clear: both;
 }
 
+.chatgpt-to-notion-action-slot--inline {
+  display: inline-flex;
+  width: auto;
+  max-width: max-content;
+  margin: 0 0 0 calc(8px * var(--ai-to-notion-button-scale));
+  clear: none;
+  vertical-align: middle;
+}
+
+.chatgpt-to-notion-action-slot--inline .chatgpt-to-notion-button {
+  margin-left: 0;
+}
+
 .chatgpt-to-notion-action-slot--chatgpt {
+  display: block;
+  clear: both;
+}
+
+.chatgpt-to-notion-action-slot--claude {
   display: block;
   clear: both;
 }

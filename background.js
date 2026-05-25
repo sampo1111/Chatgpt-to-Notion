@@ -259,7 +259,7 @@ async function appendStoredBlocksToNotionPage(pageId, anchorBlockId, operationId
   const lastCopy = stored[LAST_COPY_KEY];
 
   if (!lastCopy?.blocks?.length) {
-    throw new Error("No captured AI reply found. Copy from ChatGPT or Gemini first.");
+    throw new Error("No captured AI reply found. Copy from ChatGPT, Gemini, or Claude first.");
   }
 
   return appendBlocksToNotionPage({

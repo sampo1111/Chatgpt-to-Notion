@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chatgpt to Notion",
-  "description": "Move ChatGPT and Gemini answers into Notion with native inline equations and equation blocks.",
+  "description": "Move ChatGPT, Gemini, and Claude answers into Notion with native inline equations and equation blocks.",
   "version": "0.3.0",
   "permissions": [
     "clipboardRead",
@@ -12,6 +12,7 @@
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://gemini.google.com/*",
+    "https://claude.ai/*",
     "https://www.notion.so/*",
     "https://notion.so/*",
     "https://api.notion.com/*"
@@ -24,7 +25,8 @@
       "matches": [
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://claude.ai/*"
       ],
       "js": [
         "button-theme.js",

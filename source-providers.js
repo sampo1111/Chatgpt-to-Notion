@@ -189,24 +189,16 @@
     messageSelector: [
       "model-response",
       "response-container",
-      "[data-test-id='model-response']",
-      "[data-response-id]",
-      "[class*='model-response']",
-      "[class*='response-container']"
+      "[data-test-id='model-response']"
     ].join(", "),
     messageRootSelector: [
       "model-response",
       "response-container",
-      "[data-test-id='model-response']",
-      "[data-response-id]",
-      "[class*='model-response']",
-      "[class*='response-container']"
+      "[data-test-id='model-response']"
     ].join(", "),
     contentSelector: [
       "message-content",
       ".markdown",
-      "[class*='markdown']",
-      "[class*='response-content']",
       ".response-content",
       ".model-response-text",
       "[data-message-content]"
@@ -231,8 +223,8 @@
     },
     getButtonOwner(message, contentRoot) {
       return (
-        contentRoot?.closest?.("response-container, model-response, [data-response-id]") ||
-        message?.closest?.("response-container, model-response, [data-response-id]") ||
+        contentRoot?.closest?.("response-container, model-response, [data-test-id='model-response']") ||
+        message?.closest?.("response-container, model-response, [data-test-id='model-response']") ||
         message ||
         contentRoot ||
         null
@@ -250,8 +242,12 @@
       );
     },
     mountButton({ owner, anchor, button, contentRoot }) {
+      const actionAnchor =
+        anchor?.matches?.("message-actions") || anchor?.getAttribute?.("role") === "toolbar"
+          ? anchor
+          : anchor?.closest?.("message-actions, [role='toolbar']");
       const slotOwner =
-        (contentRoot instanceof Element ? contentRoot.parentElement : null) || owner || anchor || contentRoot;
+        actionAnchor || (contentRoot instanceof Element ? contentRoot.parentElement : null) || owner || contentRoot;
 
       if (!slotOwner) {
         anchor?.appendChild?.(button);
@@ -269,6 +265,136 @@
         slot.setAttribute("data-ai-to-notion-action-slot", "gemini");
       } else {
         slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--gemini";
+      }
+
+      const isInlineActionSlot = slotOwner === actionAnchor;
+      if (isInlineActionSlot) {
+        slot.classList.add("chatgpt-to-notion-action-slot--inline");
+      }
+
+      slot.style.marginLeft = "";
+      slot.style.width = "";
+      slot.style.maxWidth = "";
+
+      if (isInlineActionSlot) {
+        if (slot.parentElement !== slotOwner) {
+          slotOwner.appendChild(slot);
+        }
+      } else if (contentRoot instanceof Element && contentRoot.parentElement === slotOwner) {
+        if (slot.parentElement !== slotOwner || slot.previousSibling !== contentRoot) {
+          slotOwner.insertBefore(slot, contentRoot.nextSibling);
+        }
+      } else if (slot.parentElement !== slotOwner) {
+        slotOwner.appendChild(slot);
+      }
+
+      slot.replaceChildren(button);
+      return button;
+    }
+  });
+
+  const claudeProvider = buildProvider({
+    id: "claude",
+    label: "Claude",
+    hostnames: ["claude.ai"],
+    messageSelector: [
+      "[data-test-render-count]",
+      "div[data-is-streaming]",
+      ".font-claude-response"
+    ].join(", "),
+    messageRootSelector: [
+      "[data-test-render-count]",
+      "div[data-is-streaming]",
+      ".font-claude-response"
+    ].join(", "),
+    contentSelector: [
+      ".standard-markdown",
+      ".prose",
+      ".font-claude-response",
+      ".font-claude-message",
+      "div[data-is-streaming]"
+    ].join(", "),
+    isAssistantMessage(message) {
+      if (!message) {
+        return false;
+      }
+
+      const assistantSelector = "div[data-is-streaming], .font-claude-response";
+      const hasAssistantContent =
+        message.matches?.(assistantSelector) || message.querySelector?.(assistantSelector);
+      const hasUserMessage =
+        message.matches?.("[data-testid='user-message']") ||
+        message.querySelector?.("[data-testid='user-message']");
+
+      if (hasUserMessage && !hasAssistantContent) {
+        return false;
+      }
+
+      if (hasAssistantContent) {
+        return true;
+      }
+
+      const copyAction = message.querySelector?.(
+        "[role='group'][aria-label='Message actions'] button[data-testid='action-bar-copy']"
+      );
+      const feedbackAction = message.querySelector?.(
+        "button[aria-label='Give positive feedback'], button[aria-label='Give negative feedback']"
+      );
+
+      return Boolean(copyAction && feedbackAction);
+    },
+    isWrapperForAssistant(message) {
+      return Boolean(
+        message?.querySelector?.("[data-testid='user-message']") &&
+          message?.querySelector?.("div[data-is-streaming], .font-claude-response")
+      );
+    },
+    getButtonOwner(message, contentRoot) {
+      return (
+        contentRoot?.closest?.("div[data-is-streaming]") ||
+        contentRoot?.closest?.("[data-test-render-count]") ||
+        message?.closest?.("div[data-is-streaming]") ||
+        message?.closest?.("[data-test-render-count]") ||
+        message ||
+        contentRoot ||
+        null
+      );
+    },
+    findButtonAnchor(message, contentRoot, owner) {
+      return (
+        owner?.querySelector?.("[role='group'][aria-label='Message actions']") ||
+        owner?.querySelector?.("button[data-testid='action-bar-copy']")?.parentElement ||
+        message?.querySelector?.("[role='group'][aria-label='Message actions']") ||
+        message?.querySelector?.("button[data-testid='action-bar-copy']")?.parentElement ||
+        contentRoot?.parentElement ||
+        owner ||
+        message
+      );
+    },
+    mountButton({ owner, anchor, button, contentRoot }) {
+      const slotOwner =
+        contentRoot?.closest?.("div[data-is-streaming]") ||
+        (contentRoot instanceof Element ? contentRoot.parentElement : null) ||
+        owner ||
+        anchor ||
+        contentRoot;
+
+      if (!slotOwner) {
+        anchor?.appendChild?.(button);
+        return button;
+      }
+
+      let slot =
+        slotOwner.querySelector?.("[data-ai-to-notion-action-slot='claude']") ||
+        owner?.querySelector?.("[data-ai-to-notion-action-slot='claude']") ||
+        null;
+
+      if (!slot) {
+        slot = document.createElement("div");
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--claude";
+        slot.setAttribute("data-ai-to-notion-action-slot", "claude");
+      } else {
+        slot.className = "chatgpt-to-notion-action-slot chatgpt-to-notion-action-slot--claude";
       }
 
       slot.style.marginLeft = "";
@@ -289,7 +415,7 @@
     }
   });
 
-  const providers = [chatgptProvider, geminiProvider];
+  const providers = [chatgptProvider, geminiProvider, claudeProvider];
 
   function resolveCurrentProvider() {
     const hostname = window.location.hostname;
