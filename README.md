@@ -109,3 +109,6 @@ ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 �
 - Notion이 있는 프로필에 토큰 저장
 - ChatGPT 쪽에서 복사
 - Notion 쪽에서 붙여넣기
+
+
+123123
