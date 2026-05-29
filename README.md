@@ -22,6 +22,9 @@ ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 �
 - Notion
   - `https://www.notion.so/*`
   - `https://notion.so/*`
+  - `https://notion.com/*`
+  - `https://www.notion.com/*`
+  - `https://app.notion.com/*`
 
 ## 빠른 시작
 
@@ -110,5 +113,3 @@ ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 �
 - ChatGPT 쪽에서 복사
 - Notion 쪽에서 붙여넣기
 
-
-123123

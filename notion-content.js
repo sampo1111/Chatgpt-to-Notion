@@ -401,8 +401,13 @@
   }
 
   function isNotionWindowActive() {
+    const hostname = window.location.hostname;
     const isNotionDomain =
-      window.location.hostname === "www.notion.so" || window.location.hostname === "notion.so";
+      hostname === "www.notion.so" ||
+      hostname === "notion.so" ||
+      hostname === "notion.com" ||
+      hostname === "www.notion.com" ||
+      hostname === "app.notion.com";
 
     return isNotionDomain && !document.hidden && document.hasFocus();
   }
