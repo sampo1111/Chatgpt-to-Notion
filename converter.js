@@ -35,6 +35,32 @@
     };
   }
 
+  function convertMathElement(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+
+    const latex = extractLatex(element);
+    if (!latex) {
+      return null;
+    }
+
+    const blocks = isDisplayMathElement(element)
+      ? [{ type: "equation", latex }]
+      : [
+          {
+            type: "paragraph",
+            children: [{ type: "math", latex }]
+          }
+        ];
+
+    return {
+      blocks,
+      markdown: renderBlocksMarkdown(blocks).trim(),
+      html: renderBlocksHtml(blocks).trim()
+    };
+  }
+
   function parseContainerChildren(container) {
     const blocks = [];
 
@@ -64,10 +90,20 @@
         return [];
       }
 
+      const displayLatex = extractStandaloneDisplayLatex(text);
+      if (displayLatex) {
+        return [
+          {
+            type: "equation",
+            latex: displayLatex
+          }
+        ];
+      }
+
       return [
         {
           type: "paragraph",
-          children: [{ type: "text", text }]
+          children: splitInlineMathText(text)
         }
       ];
     }
@@ -431,7 +467,7 @@
 
     if (node.nodeType === Node.TEXT_NODE) {
       const text = collapseWhitespace(node.textContent || "");
-      return text ? [{ type: "text", text }] : [];
+      return text ? splitInlineMathText(text) : [];
     }
 
     if (node.nodeType !== Node.ELEMENT_NODE) {
@@ -973,10 +1009,34 @@
       return true;
     }
 
+    if (hasMathSignal(element)) {
+      return false;
+    }
+
     return (
       element.matches("button, svg, path, textarea, input, select") ||
       element.closest("[data-chatgpt-to-notion-button]") !== null ||
       element.getAttribute("aria-hidden") === "true"
+    );
+  }
+
+  function hasMathSignal(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+
+    return Boolean(
+      element.classList?.contains("katex") ||
+        element.classList?.contains("katex-display") ||
+        element.classList?.contains("math") ||
+        element.classList?.contains("math-inline") ||
+        element.classList?.contains("math-display") ||
+        element.matches?.(
+          "mjx-container, math, annotation[encoding='application/x-tex'], annotation[encoding='application/x-tex; mode=display'], script[type^='math/tex'], [data-latex], [data-tex], [data-math], [data-testid='inline-math'], [data-testid='display-math'], [data-math-style='display']"
+        ) ||
+        element.querySelector?.(
+          "annotation[encoding='application/x-tex'], annotation[encoding='application/x-tex; mode=display'], script[type^='math/tex'], [data-latex], [data-tex], [data-math]"
+        )
     );
   }
 
@@ -1007,9 +1067,13 @@
 
     const selector = [
       ".katex-display",
+      ".math-display",
       "mjx-container[display='true']",
       "math[display='block']",
       "math[display='true']",
+      "script[type='math/tex; mode=display']",
+      "script[type='math/tex'][mode='display']",
+      "[data-math-style='display']",
       "p",
       "pre",
       "ul",
@@ -1044,7 +1108,7 @@
   function hasDisplayMathDescendant(element) {
     return Boolean(
       element?.querySelector?.(
-        ".katex-display, mjx-container[display='true'], math[display='block'], math[display='true']"
+        ".katex-display, .math-display, mjx-container[display='true'], math[display='block'], math[display='true'], script[type='math/tex; mode=display'], script[type='math/tex'][mode='display'], [data-math-style='display']"
       )
     );
   }
@@ -1054,8 +1118,9 @@
       element &&
         element.nodeType === Node.ELEMENT_NODE &&
         (element.classList.contains("katex-display") ||
+          element.classList.contains("math-display") ||
           element.matches(
-            "[data-testid='display-math'], [data-display='true'], mjx-container[display='true'], math[display='block'], math[display='true']"
+            "[data-testid='display-math'], [data-display='true'], [data-math-style='display'], mjx-container[display='true'], math[display='block'], math[display='true'], script[type='math/tex; mode=display'], script[type='math/tex'][mode='display']"
           ))
     );
   }
@@ -1065,8 +1130,10 @@
       element &&
         element.nodeType === Node.ELEMENT_NODE &&
         (element.classList.contains("katex") ||
-          element.matches("[data-testid='inline-math'], mjx-container, math")) &&
-        !element.closest(".katex-display, mjx-container[display='true'], math[display='block'], math[display='true']")
+          element.classList.contains("math") ||
+          element.classList.contains("math-inline") ||
+          element.matches("[data-testid='inline-math'], mjx-container, math, script[type^='math/tex'], [data-latex], [data-tex], [data-math]")) &&
+        !element.closest(".katex-display, .math-display, mjx-container[display='true'], math[display='block'], math[display='true'], script[type='math/tex; mode=display'], script[type='math/tex'][mode='display'], [data-math-style='display']")
     );
   }
 
@@ -1076,17 +1143,51 @@
   }
 
   function extractLatex(element) {
-    const annotation = element.querySelector(
-      "annotation[encoding='application/x-tex'], annotation[encoding='application/x-tex; mode=display']"
-    );
-    const source =
-      annotation?.textContent ||
-      element.getAttribute("data-latex") ||
-      element.getAttribute("alttext") ||
-      element.getAttribute("aria-label") ||
-      "";
+    const annotationSelector =
+      "annotation[encoding='application/x-tex'], annotation[encoding='application/x-tex; mode=display']";
+    const annotation = element.matches?.(annotationSelector) ? element : element.querySelector(annotationSelector);
+    const mathElement =
+      element.matches?.("math") ? element : element.querySelector?.("math");
+    const sourceSelector =
+      "[data-chatgpt-to-notion-latex], [data-latex], [data-tex], [data-math]";
+    const sourceElement = element.matches?.(sourceSelector)
+      ? element
+      : element.querySelector?.(sourceSelector);
+    const trustedCandidates = [
+      annotation?.textContent,
+      element.getAttribute("data-chatgpt-to-notion-latex"),
+      element.getAttribute("data-latex"),
+      element.getAttribute("data-tex"),
+      element.getAttribute("data-math"),
+      sourceElement?.getAttribute("data-chatgpt-to-notion-latex"),
+      sourceElement?.getAttribute("data-latex"),
+      sourceElement?.getAttribute("data-tex"),
+      sourceElement?.getAttribute("data-math"),
+      element.matches?.("script[type^='math/tex']") ? element.textContent : "",
+      mathElement ? convertMathMlToLatex(mathElement) : ""
+    ];
 
-    return normalizeLatex(source);
+    for (const candidate of trustedCandidates) {
+      const latex = normalizeLatex(candidate);
+      if (latex) {
+        return latex;
+      }
+    }
+
+    const labelCandidates = [
+      element.getAttribute("alttext"),
+      element.getAttribute("title"),
+      element.getAttribute("aria-label")
+    ];
+
+    for (const candidate of labelCandidates) {
+      const latex = normalizeLatex(candidate);
+      if (looksLikeLatex(latex)) {
+        return latex;
+      }
+    }
+
+    return "";
   }
 
   function normalizeLatex(source) {
@@ -1096,9 +1197,199 @@
       return "";
     }
 
-    latex = latex.replace(/^\\\((.*)\\\)$/s, "$1").replace(/^\\\[(.*)\\\]$/s, "$1");
+    latex = latex
+      .replace(/^LaTeX:\s*/i, "")
+      .replace(/^\\\((.*)\\\)$/s, "$1")
+      .replace(/^\\\[(.*)\\\]$/s, "$1")
+      .replace(/^\$\$(.*)\$\$$/s, "$1")
+      .replace(/^\$(.*)\$$/s, "$1");
 
     return latex.trim();
+  }
+
+  function extractStandaloneDisplayLatex(text) {
+    const trimmed = (text || "").trim();
+    const match = trimmed.match(/^\\\[((?:.|\n)+)\\\]$/) || trimmed.match(/^\$\$((?:.|\n)+)\$\$$/);
+    return match ? normalizeLatex(match[0]) : "";
+  }
+
+  function splitInlineMathText(text) {
+    const parts = [];
+    const source = text || "";
+    const pattern = /(\\\((.+?)\\\)|\\\[((?:.|\n)+?)\\\]|\$\$((?:.|\n)+?)\$\$|\$([^\s$](?:\\.|[^$])*?)\$)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(source)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: "text", text: source.slice(lastIndex, match.index) });
+      }
+
+      const latex = normalizeLatex(match[0]);
+      if (latex) {
+        parts.push({ type: "math", latex });
+      }
+
+      lastIndex = pattern.lastIndex;
+    }
+
+    if (lastIndex < source.length) {
+      parts.push({ type: "text", text: source.slice(lastIndex) });
+    }
+
+    return parts.length ? parts : [{ type: "text", text: source }];
+  }
+
+  function looksLikeLatex(source) {
+    const text = source || "";
+    return /\\[A-Za-z]+|[_^{}]|\d+\s*[=+\-*/]\s*\d+|[A-Za-z]\s*[=+\-*/]\s*[A-Za-z0-9]/.test(text);
+  }
+
+  function convertMathMlToLatex(node) {
+    if (!node) {
+      return "";
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      return normalizeMathText(node.textContent || "");
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return "";
+    }
+
+    const element = node;
+    const tagName = element.tagName.toLowerCase();
+    const children = Array.from(element.childNodes).map(convertMathMlToLatex).filter(Boolean);
+
+    if (tagName === "math" || tagName === "mrow" || tagName === "semantics" || tagName === "mstyle") {
+      return joinLatexChildren(children);
+    }
+
+    if (tagName === "annotation") {
+      return element.getAttribute("encoding")?.includes("tex") ? element.textContent || "" : "";
+    }
+
+    if (tagName === "mi" || tagName === "mn" || tagName === "mtext") {
+      return normalizeMathText(element.textContent || "");
+    }
+
+    if (tagName === "mo") {
+      return normalizeMathOperator(element.textContent || "");
+    }
+
+    if (tagName === "msup") {
+      return `${wrapLatexAtom(children[0])}^{${children[1] || ""}}`;
+    }
+
+    if (tagName === "msub") {
+      return `${wrapLatexAtom(children[0])}_{${children[1] || ""}}`;
+    }
+
+    if (tagName === "msubsup") {
+      return `${wrapLatexAtom(children[0])}_{${children[1] || ""}}^{${children[2] || ""}}`;
+    }
+
+    if (tagName === "mfrac") {
+      return `\\frac{${children[0] || ""}}{${children[1] || ""}}`;
+    }
+
+    if (tagName === "msqrt") {
+      return `\\sqrt{${joinLatexChildren(children)}}`;
+    }
+
+    if (tagName === "mroot") {
+      return `\\sqrt[${children[1] || ""}]{${children[0] || ""}}`;
+    }
+
+    if (tagName === "mover") {
+      return `\\overset{${children[1] || ""}}{${children[0] || ""}}`;
+    }
+
+    if (tagName === "munder") {
+      return `\\underset{${children[1] || ""}}{${children[0] || ""}}`;
+    }
+
+    if (tagName === "munderover") {
+      return `\\overset{${children[2] || ""}}{\\underset{${children[1] || ""}}{${children[0] || ""}}}`;
+    }
+
+    if (tagName === "mtable") {
+      return children.join(" \\\\ ");
+    }
+
+    if (tagName === "mtr") {
+      return children.join(" & ");
+    }
+
+    if (tagName === "mtd") {
+      return joinLatexChildren(children);
+    }
+
+    return joinLatexChildren(children) || normalizeMathText(element.textContent || "");
+  }
+
+  function normalizeMathText(text) {
+    return (text || "")
+      .replace(/\u2212/g, "-")
+      .replace(/\u00a0/g, " ")
+      .trim();
+  }
+
+  function normalizeMathOperator(text) {
+    const operator = normalizeMathText(text);
+    const operators = {
+      "\u00d7": "\\times",
+      "\u00f7": "\\div",
+      "\u2260": "\\ne",
+      "\u2264": "\\le",
+      "\u2265": "\\ge",
+      "\u2248": "\\approx",
+      "\u221e": "\\infty",
+      "\u2211": "\\sum",
+      "\u220f": "\\prod",
+      "\u222b": "\\int",
+      "\u2208": "\\in",
+      "\u2209": "\\notin",
+      "\u2282": "\\subset",
+      "\u2286": "\\subseteq",
+      "\u2229": "\\cap",
+      "\u222a": "\\cup",
+      "\u2192": "\\to",
+      "\u21d2": "\\Rightarrow",
+      "\u223c": "\\sim",
+      "\u03b1": "\\alpha",
+      "\u03b2": "\\beta",
+      "\u03b3": "\\gamma",
+      "\u03b4": "\\delta",
+      "\u03b5": "\\epsilon",
+      "\u03b8": "\\theta",
+      "\u03bb": "\\lambda",
+      "\u03bc": "\\mu",
+      "\u03c0": "\\pi",
+      "\u03c1": "\\rho",
+      "\u03c3": "\\sigma",
+      "\u03c4": "\\tau",
+      "\u03c6": "\\phi",
+      "\u03c9": "\\omega"
+    };
+
+    return operators[operator] || operator;
+  }
+
+  function joinLatexChildren(children) {
+    return (children || [])
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+([,.;:)])/g, "$1")
+      .replace(/([({])\s+/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function wrapLatexAtom(source) {
+    const latex = source || "";
+    return /^[A-Za-z0-9\\]+$/.test(latex) ? latex : `{${latex}}`;
   }
 
   function extractCodeLanguage(element) {
@@ -1142,6 +1433,7 @@
 
   window.ChatGPTToNotionConverter = {
     convertMessage,
-    convertFragment
+    convertFragment,
+    convertMathElement
   };
 })();

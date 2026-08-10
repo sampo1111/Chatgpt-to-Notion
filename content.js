@@ -8,14 +8,25 @@
   const MATH_SELECTOR = [
     ".katex",
     ".katex-display",
+    ".math",
+    ".math-inline",
+    ".math-display",
     "mjx-container",
     "math",
+    "annotation[encoding='application/x-tex']",
+    "annotation[encoding='application/x-tex; mode=display']",
+    "script[type^='math/tex']",
+    "[data-latex]",
+    "[data-tex]",
+    "[data-math]",
     "[data-testid='inline-math']",
     "[data-testid='display-math']",
-    "[data-display='true']"
+    "[data-display='true']",
+    "[data-math-style='display']"
   ].join(", ");
   const SELECTION_BUTTON_ID = "chatgpt-to-notion-selection-button";
   const PROCESSED_ATTRIBUTE = "data-chatgpt-to-notion-processed";
+  const HYDRATE_MATH_EVENT = "chatgpt-to-notion:hydrate-math";
   const provider = window.AIToNotionSourceProviders?.resolveCurrentProvider?.() || null;
   let uiState = {
     enableFeature: true,
@@ -321,6 +332,7 @@
       button.textContent = "Copying...";
 
       try {
+        hydrateChatGptMathSources();
         const result = window.ChatGPTToNotionConverter.convertMessage(contentRoot);
 
         if (!result.markdown || !result.blocks?.length) {
@@ -476,6 +488,7 @@
       return;
     }
 
+    hydrateChatGptMathSources();
     const prepared = prepareSelectionCopy(selectionContext);
     if (!prepared) {
       return;
@@ -491,9 +504,14 @@
   }
 
   async function copySelectionContext(selectionContext, button) {
+    hydrateChatGptMathSources();
     const prepared = prepareSelectionCopy(selectionContext);
     if (!prepared) {
-      showToast("Nothing to copy from this selection.");
+      if (tryNativeSelectionCopy()) {
+        showToast("Copied with browser fallback.");
+      } else {
+        showToast("Formula source not found in this ChatGPT view.");
+      }
       return;
     }
 
@@ -531,7 +549,11 @@
     const container = document.createElement("div");
     container.appendChild(fragment);
 
-    const result = window.ChatGPTToNotionConverter.convertFragment(container);
+    let result = window.ChatGPTToNotionConverter.convertFragment(container);
+    if (!result?.markdown || !result.blocks?.length) {
+      result = buildMathOnlySelectionResult(selectionContext);
+    }
+
     if (!result?.markdown || !result.blocks?.length) {
       return null;
     }
@@ -609,6 +631,97 @@
     return false;
   }
 
+  function hydrateChatGptMathSources() {
+    if (provider?.id === "chatgpt") {
+      document.dispatchEvent(new CustomEvent(HYDRATE_MATH_EVENT));
+    }
+  }
+
+  function buildMathOnlySelectionResult(selectionContext) {
+    if (!selectionContext || !window.ChatGPTToNotionConverter?.convertMathElement) {
+      return null;
+    }
+
+    const mathElements = getMathElementsInRange(selectionContext.range, selectionContext.contentRoot);
+    if (!mathElements.length) {
+      return null;
+    }
+
+    const blocks = [];
+
+    for (const element of mathElements) {
+      const converted = window.ChatGPTToNotionConverter.convertMathElement(element);
+      if (converted?.blocks?.length) {
+        blocks.push(...converted.blocks);
+      }
+    }
+
+    if (!blocks.length) {
+      return null;
+    }
+
+    return {
+      blocks,
+      markdown: blocks
+        .map((block) => {
+          if (block.type === "equation") {
+            return `$$\n${block.latex}\n$$`;
+          }
+
+          return (block.children || [])
+            .map((part) => (part.type === "math" ? `$$${part.latex}$$` : part.text || ""))
+            .join("");
+        })
+        .join("\n\n")
+        .trim(),
+      html: blocks
+        .map((block) => {
+          if (block.type === "equation") {
+            return `<div data-chatgpt-to-notion-math="block"><pre>$$\n${escapeHtml(block.latex)}\n$$</pre></div>`;
+          }
+
+          return `<p>${(block.children || [])
+            .map((part) =>
+              part.type === "math"
+                ? `<span data-chatgpt-to-notion-math="inline">${escapeHtml(`$$${part.latex}$$`)}</span>`
+                : escapeHtml(part.text || "")
+            )
+            .join("")}</p>`;
+        })
+        .join("")
+    };
+  }
+
+  function getMathElementsInRange(range, contentRoot) {
+    if (!range || !contentRoot) {
+      return [];
+    }
+
+    const elements = [];
+    const addElement = (element) => {
+      if (element instanceof Element && !elements.includes(element)) {
+        elements.push(element);
+      }
+    };
+
+    addElement(closestMathElement(range.startContainer));
+    addElement(closestMathElement(range.endContainer));
+
+    for (const element of contentRoot.querySelectorAll(MATH_SELECTOR)) {
+      try {
+        if (range.intersectsNode(element)) {
+          addElement(element);
+        }
+      } catch (error) {
+        console.warn("Failed to collect selected math element", error);
+      }
+    }
+
+    return elements.filter(
+      (element, _, all) => !all.some((other) => other !== element && other.contains(element))
+    );
+  }
+
   function expandRangeAroundMath(range) {
     const expandedRange = range.cloneRange();
     const startMath = closestMathElement(expandedRange.startContainer);
@@ -641,6 +754,24 @@
     }
 
     return Boolean(element.closest("input, textarea, [contenteditable='true'], [role='textbox']"));
+  }
+
+  function tryNativeSelectionCopy() {
+    try {
+      return document.execCommand?.("copy") === true;
+    } catch (error) {
+      console.warn("ChatGPT to Notion native selection copy fallback failed", error);
+      return false;
+    }
+  }
+
+  function escapeHtml(text) {
+    return (text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   async function writeClipboard(result, payload) {
