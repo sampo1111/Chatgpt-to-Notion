@@ -355,7 +355,7 @@
       } catch (error) {
         console.error("ChatGPT to Notion copy failed", error);
         button.textContent = "Retry";
-        showToast("Copy failed. Check the browser console.");
+        showToast(copyFailureMessage(error));
       } finally {
         window.setTimeout(() => {
           button.disabled = false;
@@ -488,8 +488,15 @@
       return;
     }
 
-    hydrateChatGptMathSources();
-    const prepared = prepareSelectionCopy(selectionContext);
+    let prepared;
+    try {
+      hydrateChatGptMathSources();
+      prepared = prepareSelectionCopy(selectionContext);
+    } catch (error) {
+      console.warn("ChatGPT to Notion selection copy failed", error);
+      showToast(copyFailureMessage(error));
+      return;
+    }
     if (!prepared) {
       return;
     }
@@ -504,8 +511,15 @@
   }
 
   async function copySelectionContext(selectionContext, button) {
-    hydrateChatGptMathSources();
-    const prepared = prepareSelectionCopy(selectionContext);
+    let prepared;
+    try {
+      hydrateChatGptMathSources();
+      prepared = prepareSelectionCopy(selectionContext);
+    } catch (error) {
+      console.warn("ChatGPT to Notion selection copy failed", error);
+      showToast(copyFailureMessage(error));
+      return;
+    }
     if (!prepared) {
       if (tryNativeSelectionCopy()) {
         showToast("Copied with browser fallback.");
@@ -530,13 +544,19 @@
       removeSelectionCopyButton();
     } catch (error) {
       console.error("ChatGPT to Notion selection copy failed", error);
-      showToast("Selection copy failed. Check the browser console.");
+      showToast(copyFailureMessage(error));
     } finally {
       if (button) {
         button.disabled = false;
         button.textContent = previousText;
       }
     }
+  }
+
+  function copyFailureMessage(error) {
+    return error?.code === "MATH_SOURCE_UNAVAILABLE"
+      ? "Couldn't copy every formula. Refresh the AI page and try again."
+      : "Copy failed. Please try again.";
   }
 
   function prepareSelectionCopy(selectionContext) {

@@ -113,3 +113,16 @@ ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 �
 - ChatGPT 쪽에서 복사
 - Notion 쪽에서 붙여넣기
 
+## 개발 및 검증
+
+수식 검증기는 `vendor/math-renderer.js`에 포함되어 있으며, 실행 중 외부 코드를 다운로드하지 않습니다.
+`src/math-renderer.mjs`를 수정했다면 다음 명령으로 번들을 다시 생성하고 테스트합니다.
+
+```sh
+npm ci
+npm run build
+npm test
+```
+
+배포 시 `vendor` 폴더와 라이선스 파일을 함께 포함해야 합니다. `node_modules`는 개발용이며 확장 설치에 필요하지 않습니다.
+

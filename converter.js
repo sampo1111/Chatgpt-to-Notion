@@ -1187,11 +1187,18 @@
       }
     }
 
+    if (element.matches(".katex, .katex-display") || element.querySelector(".katex")) {
+      const error = new Error("A rendered formula has no recoverable source.");
+      error.code = "MATH_SOURCE_UNAVAILABLE";
+      throw error;
+    }
     return "";
   }
 
   function normalizeLatex(source) {
-    let latex = (source || "").trim();
+    let latex = (source || "")
+      .replace(/:?contentReference\[oaicite:\s*\d+\]\{index\s*=\s*\d+\}/g, "")
+      .trim();
 
     if (!latex) {
       return "";
@@ -1204,7 +1211,8 @@
       .replace(/^\$\$(.*)\$\$$/s, "$1")
       .replace(/^\$(.*)\$$/s, "$1");
 
-    return latex.trim();
+    latex = latex.trim();
+    return /contentReference\[oaicite:|\\(?:[dt]?frac|[dt]?binom|sqrt|boxed)\s*$/.test(latex) ? "" : latex;
   }
 
   function extractStandaloneDisplayLatex(text) {
