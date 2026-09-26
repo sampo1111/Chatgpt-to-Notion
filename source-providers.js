@@ -120,16 +120,29 @@
     id: "chatgpt",
     label: "ChatGPT",
     hostnames: ["chatgpt.com", "chat.openai.com"],
-    messageSelector: "[data-message-author-role='assistant'], article[data-testid^='conversation-turn-']",
-    messageRootSelector: "[data-message-author-role='assistant'], article[data-testid^='conversation-turn-']",
-    contentSelector: ".markdown, [class*='markdown'], [data-testid='conversation-turn-content']",
+    // Select the answer itself: top-level deduplication would otherwise keep
+    // the surrounding article, which is then rejected as a wrapper.
+    messageSelector: "[data-message-author-role='assistant'], [data-markdown-text-style='assistant-message']",
+    messageRootSelector: "[data-message-author-role='assistant'], [data-markdown-text-style='assistant-message']",
+    contentSelector: "[data-markdown-text-style='assistant-message'], .markdown, [class*='markdown'], [data-testid='conversation-turn-content']",
     isAssistantMessage(message) {
+      if (message?.matches?.("[data-markdown-text-style='assistant-message']")) {
+        return true;
+      }
       const role = message?.getAttribute?.("data-message-author-role");
       if (role === "assistant") {
         return true;
       }
 
       return message?.querySelector?.("[data-message-author-role='assistant']") !== null;
+    },
+    getExistingButton(message, contentRoot) {
+      // New ChatGPT uses the markdown element itself as the message root.
+      // Its action slot is a sibling, not a child of that root.
+      const slot = contentRoot?.nextElementSibling;
+      return slot?.matches("[data-ai-to-notion-action-slot='chatgpt']")
+        ? slot.querySelector("[data-chatgpt-to-notion-button]")
+        : null;
     },
     isWrapperForAssistant(message) {
       return (
@@ -155,10 +168,12 @@
         return button;
       }
 
-      let slot =
-        slotOwner.querySelector?.("[data-ai-to-notion-action-slot='chatgpt']") ||
-        owner?.querySelector?.("[data-ai-to-notion-action-slot='chatgpt']") ||
-        null;
+      // Keep each answer's slot next to its own content, including when two
+      // answer blocks share a parent. Never reuse another answer's slot.
+      let slot = contentRoot?.nextElementSibling;
+      if (!slot?.matches("[data-ai-to-notion-action-slot='chatgpt']")) {
+        slot = null;
+      }
 
       if (!slot) {
         slot = document.createElement("div");

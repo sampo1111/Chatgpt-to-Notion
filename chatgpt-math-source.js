@@ -2,7 +2,7 @@
   const SOURCE_ATTRIBUTE = "data-chatgpt-to-notion-latex";
   const HYDRATE_EVENT = "chatgpt-to-notion:hydrate-math";
   const CONTENT_SELECTOR =
-    ".markdown, [class*='markdown'], [data-testid='conversation-turn-content']";
+    "[data-markdown-text-style='assistant-message'], .markdown, [class*='markdown'], [data-testid='conversation-turn-content']";
   const REACT_FIBER_PREFIXES = ["__reactFiber$", "__reactInternalInstance$"];
   const REACT_PROPS_PREFIX = "__reactProps$";
   const MAX_FIBER_DEPTH = 40;

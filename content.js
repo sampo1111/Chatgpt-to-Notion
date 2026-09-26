@@ -38,6 +38,7 @@
   let selectionSyncScheduled = false;
   let buttonInjectionScheduled = false;
   let pendingMessageRoots = new Set();
+  const buttonContentRoots = new WeakMap();
 
   async function boot() {
     if (!provider) {
@@ -63,7 +64,9 @@
 
     observer.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-message-author-role", "data-markdown-text-style"]
     });
   }
 
@@ -217,6 +220,7 @@
     const messages = [];
 
     for (const record of records || []) {
+      messages.push(...collectMessageRootsFromNode(record.target));
       for (const node of record.addedNodes || []) {
         messages.push(...collectMessageRootsFromNode(node));
       }
@@ -270,15 +274,15 @@
   }
 
   function injectButtonIntoMessage(message) {
+    if (!message.isConnected) {
+      return;
+    }
+
     if (isWrapperForAssistant(message)) {
       return;
     }
 
     if (!isAssistantMessage(message)) {
-      return;
-    }
-
-    if (message.hasAttribute(PROCESSED_ATTRIBUTE)) {
       return;
     }
 
@@ -292,10 +296,14 @@
       return;
     }
 
-    if (owner.querySelector?.("[data-chatgpt-to-notion-button]")) {
+    const existingButton = provider.getExistingButton
+      ? provider.getExistingButton(message, contentRoot, owner)
+      : owner.querySelector?.("[data-chatgpt-to-notion-button]");
+    if (existingButton && buttonContentRoots.get(existingButton) === contentRoot) {
       message.setAttribute(PROCESSED_ATTRIBUTE, "true");
       return;
     }
+    existingButton?.remove();
 
     const anchor = findButtonAnchor(message, contentRoot, owner);
     if (!anchor) {
@@ -316,6 +324,7 @@
 
   function createCopyButton(contentRoot) {
     const button = document.createElement("button");
+    buttonContentRoots.set(button, contentRoot);
     button.type = "button";
     button.textContent = "Copy for Notion";
     button.className = "chatgpt-to-notion-button";

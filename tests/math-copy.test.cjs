@@ -328,3 +328,33 @@ test("valid cached sources survive absent React props and mismatched sources are
   fixture.hydrate();
   assert.equal(fixture.maths[0].getAttribute("data-chatgpt-to-notion-latex"), null);
 });
+
+test("new ChatGPT markdown roots hydrate formulas and support full and selected copies", async (t) => {
+  const fixture = setup(t);
+  const { window, root } = fixture;
+  const wrapper = root.parentElement;
+  wrapper.removeAttribute("data-message-author-role");
+  wrapper.removeAttribute("data-testid");
+  wrapper.setAttribute("data-chatgpt-selection-message-id", "fixture-answer");
+  root.className = "MarkdownRoot-fixture";
+  root.setAttribute("data-markdown-text-style", "assistant-message");
+  root.setAttribute("data-markdown-text-tone", "primary");
+  attachFiber(root, { children: formulas.map(source => `\\[${source}\\]`).join("\n\n") });
+  fixture.hydrate();
+  assertFormulas(fixture.convert());
+  const clipboard = await bootCopyUi(fixture);
+  window.document.querySelector("[data-chatgpt-to-notion-button]").click();
+  await new Promise(setImmediate);
+  assert.equal(clipboard.writes.length, 1);
+  assert.deepEqual(expressions(decodeHtmlPayload(window, await clipboard.writes[0]["text/html"].text())), formulas);
+
+  const range = window.document.createRange();
+  range.selectNodeContents(root);
+  window.getSelection().addRange(range);
+  const event = new window.Event("copy", { bubbles: true, cancelable: true });
+  const data = {};
+  Object.defineProperty(event, "clipboardData", { value: { setData: (type, value) => { data[type] = value; } } });
+  window.document.dispatchEvent(event);
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(expressions(decodeHtmlPayload(window, data["text/html"])), formulas);
+});
