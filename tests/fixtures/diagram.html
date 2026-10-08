@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; color: #f3f3f3; background: #090909; font: 18px Arial, sans-serif; }
+  .markdown { max-width: 960px; margin: auto; }
+  .diagram { border: 1px solid #555; border-radius: 8px; padding: 24px; margin: 18px 0; }
+  .diagram h2 { text-align: center; font-size: 24px; margin: 12px 0 28px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .box { border: 1px solid #555; border-radius: 6px; text-align: center; padding: 18px 10px; }
+  .box h3, .details h3 { font-size: 20px; margin: 0 0 12px; }
+  .box p, .details p { font-size: 16px; margin: 0; }
+  .arrow { text-align: center; font-size: 26px; padding: 14px; }
+  .details { padding: 16px 0 6px; }
+  @media (max-width: 500px) { body { padding: 12px; } .diagram { padding: 12px; } .box { padding: 12px 5px; } }
+</style>
+<article data-message-author-role="assistant">
+<div class="markdown">
+  <p>Before the diagram. Price $10 to $20.</p>
+  <div class="diagram">
+    <h2>&#44552;&#50997;&#49345;&#54408;</h2>
+    <div class="row">
+      <div class="box"><h3>&#48708;&#44552;&#50997;&#53804;&#51088;&#49345;&#54408;</h3><p>No investment risk</p></div>
+      <div class="box"><h3>&#44552;&#50997;&#53804;&#51088;&#49345;&#54408;</h3><p>Investment risk</p></div>
+    </div>
+    <div class="arrow">&#8595;</div>
+    <div class="row details">
+      <div><h3>&#51613;&#44428;</h3><p>Bonds, shares, funds</p></div>
+      <div><h3>&#54028;&#49373;&#49345;&#54408;</h3><p>Exchange / OTC derivatives</p></div>
+    </div>
+  </div>
+  <p>After the diagram. Editable text.</p>
+  <div class="katex-display" data-latex="x^2"><span class="katex"><span class="katex-html">x<sup>2</sup></span></span></div>
+</div>
+</article>
+</html>

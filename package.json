@@ -2,13 +2,17 @@
   "name": "chatgpt-to-notion",
   "private": true,
   "scripts": {
-    "build": "esbuild src/math-renderer.mjs --bundle --minify --format=iife --global-name=ChatGPTToNotionMathRenderer --outfile=vendor/math-renderer.js --legal-comments=linked",
-    "test": "node --test tests/*.test.cjs"
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "test:browser": "node --test tests/browser/*.test.cjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "html-to-image": "^1.11.13",
     "jsdom": "^29.1.1",
     "katex": "^0.18.7",
+    "playwright": "^1.64.0",
+    "pngjs": "^7.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   }

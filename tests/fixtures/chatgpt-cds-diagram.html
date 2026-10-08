@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; color: #eee; background: #000; font: 18px Arial, sans-serif; }
+  .markdown { max-width: 930px; margin: auto; }
+  [data-d-component="box"], [data-d-component="grid-item"] { display: flex; min-width: 0; }
+  [data-d-direction="col"] { flex-direction: column; }
+  [data-d-align="center"] { align-items: center; text-align: center; }
+  [data-d-component="grid"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  [data-d-component="text"] { margin: 0; overflow-wrap: anywhere; }
+  [data-d-component="caption"] { color: #bbb; }
+  [data-d-has-border] { border: 1px solid #333; border-radius: 10px; padding: 24px; gap: 30px; }
+  [data-d-component="grid-item"] > [data-d-component="box"] { gap: 12px; padding: 14px 0; }
+  .flow { display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .flow svg { flex: none; }
+  @media (max-width: 500px) {
+    [data-d-component="grid"] { grid-template-columns: 1fr; gap: 12px; }
+    [data-d-has-border] { padding: 16px; gap: 24px; }
+  }
+</style>
+<article data-message-author-role="assistant"><div class="markdown" data-markdown-text-style="assistant-message">
+<h3>5.4 신용부도스왑(Credit Default Swap, CDS)</h3>
+<p>CDS는 기업이나 채무자의 신용위험을 별도로 분리하여 거래하는 신용파생상품이다.</p>
+<p>대출 또는 채권에서 발생할 수 있는 신용위험을 다른 거래상대방에게 이전할 수 있다.</p>
+<h4>CDS의 기본 거래구조</h4>
+<!-- Reconstructed from the CDS screenshot using the data-d structure supplied for the previous diagram. -->
+<div id="cds-panel" data-d-component="box" data-d-direction="col" data-d-has-border="">
+  <div data-d-component="grid">
+    <div data-d-component="grid-item" data-d-direction="col" data-d-variant="transparent">
+      <div data-d-component="box" data-d-direction="col" data-d-align="center">
+        <p data-d-component="text"><strong>보장매입자</strong></p>
+        <span data-d-component="caption">신용위험을 이전하려는 측</span>
+      </div>
+    </div>
+    <div data-d-component="grid-item" data-d-direction="col" data-d-variant="transparent">
+      <div data-d-component="box" data-d-direction="col" data-d-align="center">
+        <p data-d-component="text"><strong>보장매도자</strong></p>
+        <span data-d-component="caption">신용위험을 인수하는 측</span>
+      </div>
+    </div>
+  </div>
+  <div class="flow">
+    <svg data-d-component="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+    <p data-d-component="text">보장매입자 → 보장매도자 : 프리미엄 지급</p>
+  </div>
+  <div class="flow">
+    <svg data-d-component="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12H5m6-6-6 6 6 6"/></svg>
+    <p data-d-component="text">보장매도자 → 보장매입자 : 신용사건 발생 시 약정된 손실보상</p>
+  </div>
+  <p data-d-component="text" style="text-align:center">준거자산(기초자산): 회사채, 대출채권 등</p>
+</div>
+<h4>CDS의 기능</h4>
+<ul><li>기초자산 자체를 매매하지 않고 신용위험만 분리하여 거래</li><li>채권 및 대출의 부도위험 관리</li><li>금융기관 간 신용위험 이전</li><li>신용위험에 대한 시장가격 형성</li></ul>
+<p>CDS 매입자는 프리미엄을 지급하는 대신 계약에서 정한 신용사건이 발생했을 때 보장을 받는다. <span data-testid="file-citation">Lecture Slides.pdf</span></p>
+<div class="katex-display" data-latex="x^2"><span class="katex"><span class="katex-html">x<sup>2</sup></span></span></div>
+</div></article>
+</html>

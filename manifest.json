@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Chatgpt to Notion",
   "description": "Move ChatGPT, Gemini, and Claude answers into Notion with native inline equations and equation blocks.",
-  "version": "0.3.4",
+  "version": "0.4.4",
   "permissions": [
     "clipboardRead",
     "clipboardWrite",
@@ -46,6 +46,7 @@
       "js": [
         "button-theme.js",
         "source-providers.js",
+        "vendor/diagram-capture.js",
         "converter.js",
         "content.js"
       ],

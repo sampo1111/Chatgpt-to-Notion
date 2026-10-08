@@ -1355,6 +1355,13 @@
         continue;
       }
 
+      const image = parseMarkdownImage(line);
+      if (image) {
+        blocks.push(image);
+        index += 1;
+        continue;
+      }
+
       const headingMatch = line.match(/^(#{1,4})\s+(.*)$/);
       if (headingMatch) {
         blocks.push({
@@ -1401,6 +1408,7 @@
           nextLine.trim() === "$$" ||
           nextLine.trim() === "---" ||
           nextLine.match(/^(#{1,4})\s+/) ||
+          parseMarkdownImage(nextLine) ||
           isListLine(nextLine)
         ) {
           break;
@@ -1420,6 +1428,11 @@
       blocks,
       nextIndex: index
     };
+  }
+
+  function parseMarkdownImage(line) {
+    const match = line.match(/^!\[((?:\\.|[^\]\\])*)\]\((data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+|https?:\/\/[^\s]+)\)$/);
+    return match ? { type: "image", alt: match[1].replace(/\\(.)/g, "$1"), src: match[2] } : null;
   }
 
   function parseListBlock(lines, startIndex, indentLevel) {

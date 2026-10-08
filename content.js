@@ -342,7 +342,8 @@
 
       try {
         hydrateChatGptMathSources();
-        const result = window.ChatGPTToNotionConverter.convertMessage(contentRoot);
+        const captured = await prepareDiagrams(contentRoot);
+        const result = window.ChatGPTToNotionConverter.convertMessage(captured || contentRoot);
 
         if (!result.markdown || !result.blocks?.length) {
           throw new Error("Empty message");
@@ -493,6 +494,13 @@
       return;
     }
 
+    if (window.AIToNotionDiagrams?.find(selectionContext.contentRoot, selectionContext.range).length) {
+      event.preventDefault();
+      showToast("Copying diagrams...");
+      void copySelectionContext({ ...selectionContext, range: selectionContext.range.cloneRange() }, null);
+      return;
+    }
+
     if (!selectionTouchesMath(selectionContext.range, selectionContext.contentRoot)) {
       return;
     }
@@ -520,24 +528,6 @@
   }
 
   async function copySelectionContext(selectionContext, button) {
-    let prepared;
-    try {
-      hydrateChatGptMathSources();
-      prepared = prepareSelectionCopy(selectionContext);
-    } catch (error) {
-      console.warn("ChatGPT to Notion selection copy failed", error);
-      showToast(copyFailureMessage(error));
-      return;
-    }
-    if (!prepared) {
-      if (tryNativeSelectionCopy()) {
-        showToast("Copied with browser fallback.");
-      } else {
-        showToast("Formula source not found in this ChatGPT view.");
-      }
-      return;
-    }
-
     const previousText = button?.textContent || "Copy selection";
 
     if (button) {
@@ -546,6 +536,15 @@
     }
 
     try {
+      hydrateChatGptMathSources();
+      const range = expandRangeAroundMath(selectionContext.range);
+      const captured = await prepareDiagrams(selectionContext.contentRoot, range);
+      const prepared = prepareSelectionCopy(selectionContext, captured);
+      if (!prepared) {
+        if (tryNativeSelectionCopy()) showToast("Copied with browser fallback.");
+        else showToast("Nothing could be copied from this selection.");
+        return;
+      }
       await writeClipboard(prepared.result, prepared.payload);
       await persistLastCopy(prepared.result, prepared.payload);
       showToast("Selected content copied for Notion.");
@@ -562,21 +561,31 @@
     }
   }
 
+  async function prepareDiagrams(root, range = null) {
+    if (!window.AIToNotionDiagrams?.prepare) {
+      const error = new Error("Diagram capture is unavailable. Reload the extension and this page.");
+      error.code = "DIAGRAM_CAPTURE_FAILED";
+      throw error;
+    }
+    return window.AIToNotionDiagrams.prepare(root, range);
+  }
+
   function copyFailureMessage(error) {
+    if (error?.code === "DIAGRAM_CAPTURE_FAILED") return error.message;
     return error?.code === "MATH_SOURCE_UNAVAILABLE"
       ? "Couldn't copy every formula. Refresh the AI page and try again."
       : "Copy failed. Please try again.";
   }
 
-  function prepareSelectionCopy(selectionContext) {
+  function prepareSelectionCopy(selectionContext, captured = null) {
     if (!selectionContext || !window.ChatGPTToNotionConverter?.convertFragment) {
       return null;
     }
 
     const expandedRange = expandRangeAroundMath(selectionContext.range);
     const fragment = expandedRange.cloneContents();
-    const container = document.createElement("div");
-    container.appendChild(fragment);
+    const container = captured || document.createElement("div");
+    if (!captured) container.appendChild(fragment);
 
     let result = window.ChatGPTToNotionConverter.convertFragment(container);
     if (!result?.markdown || !result.blocks?.length) {
@@ -820,7 +829,7 @@
     }
 
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(result.markdown);
+      await navigator.clipboard.writeText(textWithMarker);
       return;
     }
 
@@ -838,8 +847,8 @@
           copiedAt: payload.copiedAt,
           source: payload.source || provider?.id || "unknown",
           sourceLabel: payload.sourceLabel || provider?.label || "AI",
-          markdown: result.markdown,
-          html: result.html,
+          markdown: hasEmbeddedImages(result.markdown) ? "" : result.markdown,
+          html: hasEmbeddedImages(result.markdown) ? "" : result.html,
           blocks: result.blocks
         }
       });
@@ -861,11 +870,13 @@
   }
 
   function wrapClipboardText(markdown, marker) {
+    // PNGs already occur in Markdown. Avoid expanding them again into hidden bits.
+    if (hasEmbeddedImages(markdown)) return TEXT_PAYLOAD_HEADER + "\n" + markdown;
     return `${TEXT_PAYLOAD_HEADER}\n${encodeHiddenMarker(marker)}\n${markdown}`;
   }
 
   function encodePayload(payload) {
-    const json = JSON.stringify(payload);
+    const json = JSON.stringify(hasEmbeddedImages(payload.markdown) ? { ...payload, markdown: "" } : payload);
     const bytes = new TextEncoder().encode(json);
     let binary = "";
 
@@ -874,6 +885,10 @@
     }
 
     return btoa(binary);
+  }
+
+  function hasEmbeddedImages(markdown) {
+    return (markdown || "").includes("](data:image/");
   }
 
   function encodeHiddenMarker(base64Payload) {

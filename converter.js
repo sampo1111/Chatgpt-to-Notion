@@ -1004,10 +1004,28 @@
     return "";
   }
 
+  const SOURCE_CITATION_SELECTOR = [
+    "[data-testid*='citation']", "[data-test-id*='citation']", "[data-citation]", "[data-citation-id]", "[data-citation-index]",
+    "[data-testid='sources-footer']", "[data-testid='sources-button']", "[data-testid='source-list']", "[data-testid='source-chip']",
+    ".citation", ".citation-container", ".citation-marker", ".file-citation", ".source-chip", ".source-pill", "[class~='group/citation']"
+  ].join(", ");
+
+  function isSourceCitationElement(element) {
+    if (!element?.closest || element.closest("pre, code")) return false;
+    if (element.closest(SOURCE_CITATION_SELECTOR)) return true;
+    const chip = element.closest("[role='button'], [aria-haspopup], [tabindex], [class*='rounded-full']");
+    if (!chip || chip.querySelector("p, ul, ol, pre, table, h1, h2, h3, h4, [data-d-component='grid']")) return false;
+    const text = (chip.textContent || "").trim();
+    return text.length <= 500 && /\.(?:pdf|docx?|pptx?|xlsx?|csv|txt)(?:\s*\+\s*\d+)?$/i.test(text) &&
+      Boolean(chip.querySelector("svg, img") || chip.hasAttribute("aria-haspopup"));
+  }
+
   function shouldSkipElement(element) {
     if (!element) {
       return true;
     }
+
+    if (isSourceCitationElement(element)) return true;
 
     if (hasMathSignal(element)) {
       return false;
@@ -1224,7 +1242,8 @@
   function splitInlineMathText(text) {
     const parts = [];
     const source = text || "";
-    const pattern = /(\\\((.+?)\\\)|\\\[((?:.|\n)+?)\\\]|\$\$((?:.|\n)+?)\$\$|\$([^\s$](?:\\.|[^$])*?)\$)/g;
+    // Single dollars in rendered prose can be currency, not math delimiters.
+    const pattern = /(\\\((.+?)\\\)|\\\[((?:.|\n)+?)\\\]|\$\$((?:.|\n)+?)\$\$)/g;
     let lastIndex = 0;
     let match;
 
@@ -1442,6 +1461,7 @@
   window.ChatGPTToNotionConverter = {
     convertMessage,
     convertFragment,
-    convertMathElement
+    convertMathElement,
+    isSourceCitationElement
   };
 })();

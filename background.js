@@ -295,7 +295,8 @@ async function appendBlocksToNotionPage({ pageId, blocks, anchorBlockId, operati
 
   try {
     const normalizedPageId = normalizeNotionId(pageId);
-    const nodes = blocksToAppendNodes(blocks);
+    const imageBlocks = await prepareImageBlocks(blocks, token, operation.signal);
+    const nodes = blocksToAppendNodes(imageBlocks);
     const appendTarget = await resolveAppendTarget({
       pageId: normalizedPageId,
       anchorBlockId,
@@ -391,9 +392,9 @@ async function performNotionRequest(path, options) {
   const headers = {
     Authorization: `Bearer ${options.token}`,
     "Notion-Version": NOTION_VERSION,
-    ...(options.body ? { "Content-Type": "application/json" } : {})
+    ...(options.body && !options.formData ? { "Content-Type": "application/json" } : {})
   };
-  const body = options.body ? JSON.stringify(options.body) : undefined;
+  const body = options.formData || (options.body ? JSON.stringify(options.body) : undefined);
 
   for (let attempt = 0; attempt < NOTION_MAX_RETRIES; attempt += 1) {
     throwIfCanceled(options.signal);
@@ -1037,7 +1038,7 @@ function blockToAppendNodes(block) {
         })
       ];
     case "image":
-      return [createAppendNode(createImageFallbackBlock(block))];
+      return [createAppendNode(createImageBlock(block))];
     case "list":
       return block.items.map((item) => createListItemNode(block.ordered, item));
     case "table":
@@ -1093,7 +1094,85 @@ function createCodeBlock(block) {
   };
 }
 
-function createImageFallbackBlock(block) {
+async function prepareImageBlocks(blocks, token, signal) {
+  const uploads = new Map();
+  let totalBytes = 0;
+
+  async function visit(value) {
+    throwIfCanceled(signal);
+    if (Array.isArray(value)) {
+      const output = [];
+      for (const child of value) output.push(await visit(child));
+      return output;
+    }
+    if (!value || typeof value !== "object") return value;
+    if (value.type === "image" && String(value.src || "").startsWith("data:")) {
+      let id = uploads.get(value.src);
+      if (!id) {
+        const blob = decodeImageDataUrl(value.src);
+        totalBytes += blob.size;
+        if (totalBytes > 4 * 1024 * 1024) throw new Error("The images are too large together. Copy fewer diagrams.");
+        const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[blob.type];
+        const filename = "diagram-" + (uploads.size + 1) + "." + extension;
+        const upload = await notionFetch("/file_uploads", {
+          method: "POST", token, signal,
+          body: { mode: "single_part", filename, content_type: blob.type }
+        });
+        if (!/^[a-f0-9-]{36}$/i.test(upload.id || "")) throw new Error("Notion did not return an image upload ID.");
+        const formData = new FormData();
+        formData.append("file", blob, filename);
+        const sent = await notionFetch("/file_uploads/" + upload.id + "/send", {
+          method: "POST", token, signal, formData
+        });
+        if (sent.status !== "uploaded") throw new Error("Notion has not finished uploading the diagram. Please try again.");
+        id = upload.id;
+        uploads.set(value.src, id);
+      }
+      const { src, ...image } = value;
+      return { ...image, fileUploadId: id };
+    }
+    const output = {};
+    for (const [key, child] of Object.entries(value)) output[key] = await visit(child);
+    return output;
+  }
+
+  return visit(blocks);
+}
+
+function decodeImageDataUrl(src) {
+  if (/^data:image\/svg\+xml[;,]/i.test(String(src || ""))) {
+    throw new Error("This copy contains an SVG image. Reload the extension and the AI page, then copy the answer again to convert it to PNG.");
+  }
+  const match = String(src || "").match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match || match[2].length > Math.ceil(2 * 1024 * 1024 / 3) * 4) {
+    throw new Error("Invalid or oversized diagram image.");
+  }
+  let binary;
+  try { binary = atob(match[2]); } catch { throw new Error("Invalid diagram image encoding."); }
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  const valid = match[1] === "image/png"
+    ? [137, 80, 78, 71, 13, 10, 26, 10].every((byte, i) => bytes[i] === byte)
+    : match[1] === "image/jpeg"
+      ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+      : binary.startsWith("RIFF") && binary.slice(8, 12) === "WEBP";
+  if (!valid || bytes.length > 2 * 1024 * 1024) throw new Error("Invalid diagram image data.");
+  return new Blob([bytes], { type: match[1] });
+}
+
+function createImageBlock(block) {
+  const caption = block.alt ? chunkTextRichText(block.alt) : [];
+  if (block.fileUploadId) {
+    return {
+      object: "block", type: "image",
+      image: { type: "file_upload", file_upload: { id: block.fileUploadId }, caption }
+    };
+  }
+  if (/^https?:\/\//i.test(block.src || "")) {
+    return {
+      object: "block", type: "image",
+      image: { type: "external", external: { url: block.src }, caption }
+    };
+  }
   const parts = [];
 
   if (block.alt) {

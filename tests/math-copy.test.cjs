@@ -73,6 +73,7 @@ async function bootCopyUi(fixture) {
     value: { write: async items => writes.push(items[0].data) }
   });
   window.eval(readFileSync(path.join(__dirname, "../source-providers.js"), "utf8"));
+  window.eval(readFileSync(path.join(__dirname, "../vendor/diagram-capture.js"), "utf8"));
   window.eval(readFileSync(path.join(__dirname, "../content.js"), "utf8"));
   await new Promise(setImmediate);
   return { writes, stored };

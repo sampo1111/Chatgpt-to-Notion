@@ -27,7 +27,7 @@ async function setup(t, html) {
   } };
   window.TextEncoder = TextEncoder;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async () => {} } });
-  for (const file of ["source-providers.js", "content.js"]) {
+  for (const file of ["source-providers.js", "vendor/diagram-capture.js", "content.js"]) {
     window.eval(readFileSync(path.join(__dirname, "..", file), "utf8"));
   }
   async function flush() {
