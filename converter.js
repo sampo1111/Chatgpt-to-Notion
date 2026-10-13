@@ -16,6 +16,9 @@
     "FIGURE",
     "IMG"
   ]);
+  const CODE_LANGUAGE_LABELS = new Set((
+    "abap|arduino|bash|basic|c|clojure|coffeescript|c++|c#|css|dart|diff|docker|elixir|elm|erlang|flow|fortran|f#|gherkin|glsl|go|graphql|groovy|haskell|html|java|javascript|json|julia|kotlin|latex|less|lisp|livescript|lua|makefile|markdown|markup|matlab|mermaid|nix|objective-c|ocaml|pascal|perl|php|plain text|powershell|prolog|protobuf|python|r|reason|ruby|rust|sass|scala|scheme|scss|shell|sql|swift|typescript|vb.net|verilog|vhdl|visual basic|webassembly|xml|yaml|java/c/c++/c#|js|jsx|ts|tsx|py|sh|md|cpp|csharp|cs|fsharp|fs|rb|rs|golang|yml|dockerfile|shellscript|text|plaintext|txt|ps1|objectivec|objc|tex|rscript"
+  ).split("|"));
 
   function convertMessage(root) {
     const blocks = parseContainerChildren(root);
@@ -144,6 +147,11 @@
       return parseCodeBlock(element);
     }
 
+    const codeContainer = findCodeContainer(element);
+    if (codeContainer) {
+      return parseCodeBlock(codeContainer);
+    }
+
     if (tagName === "UL" || tagName === "OL") {
       return [parseList(element)];
     }
@@ -233,7 +241,12 @@
 
   function parseCodeBlock(pre) {
     const code = pre.querySelector("code");
-    const source = (code?.textContent || pre.textContent || "").replace(/\n+$/, "");
+    const clone = code ? null : pre.cloneNode(true);
+    if (clone) {
+      codeHeader(clone)?.element.remove();
+      clone.querySelectorAll("button, svg, [aria-hidden='true']").forEach(node => node.remove());
+    }
+    const source = (code?.textContent ?? clone.textContent ?? "").replace(/\n+$/, "");
 
     if (!source.trim()) {
       return [];
@@ -242,7 +255,7 @@
     return [
       {
         type: "code",
-        language: extractCodeLanguage(code || pre),
+        language: extractCodeLanguage(pre),
         code: source
       }
     ];
@@ -427,7 +440,7 @@
         continue;
       }
 
-      if (isStandaloneBlockElement(element, options)) {
+      if (isStandaloneBlockElement(element, options) || findCodeContainer(element)) {
         flushInline();
         parts.push({
           type: "block",
@@ -1419,10 +1432,49 @@
     return /^[A-Za-z0-9\\]+$/.test(latex) ? latex : `{${latex}}`;
   }
 
-  function extractCodeLanguage(element) {
-    const classNames = [element.className || "", element.getAttribute("data-language") || ""].join(" ");
-    const match = classNames.match(/language-([A-Za-z0-9_+-]+)/);
-    return match?.[1] || "";
+  function codeHeader(container) {
+    const first = container.firstElementChild;
+    if (!first || first.matches("pre, code, p, h1, h2, h3, h4, h5, h6") || first.querySelector("pre, code")) return null;
+    const clone = first.cloneNode(true);
+    clone.querySelectorAll("button, svg, [hidden], [aria-hidden='true']").forEach(node => node.remove());
+    const label = (clone.textContent || "").trim().toLowerCase();
+    return CODE_LANGUAGE_LABELS.has(label) ? { element: first, language: label } : null;
+  }
+
+  function findCodeContainer(element) {
+    if (!element.matches("div, section, figure, code-block")) return null;
+    const pres = element.querySelectorAll("pre");
+    if (pres.length !== 1) return null;
+    // ChatGPT's code surface contains deeply nested scroll panes and controls.
+    if (element.matches("[data-markdown-copy='code-block']")) return pres[0];
+    if (!codeHeader(element)) return null;
+    // Only consume a toolbar plus one code area, never the surrounding answer.
+    const rest = Array.from(element.children).slice(1);
+    if (rest.length !== 1 || !(rest[0] === pres[0] || rest[0].contains(pres[0]))) return null;
+    for (let area = rest[0]; area !== pres[0]; area = area.firstElementChild) {
+      if (area.children.length !== 1 || Array.from(area.childNodes).some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())) return null;
+    }
+    return pres[0];
+  }
+
+  function extractCodeLanguage(pre) {
+    const code = pre.querySelector("code");
+    const surface = pre.closest("[data-markdown-copy='code-block']");
+    for (const element of [code, pre, surface]) {
+      if (!element) continue;
+      for (const attribute of ["data-language", "data-lang", "lang"]) {
+        const value = element.getAttribute(attribute)?.trim();
+        if (value) return value.replace(/^(?:language|lang)-/i, "").toLowerCase();
+      }
+      const match = (element.getAttribute("class") || "").match(/(?:^|\s)(?:language|lang)-([^\s]+)/i);
+      if (match) return match[1].toLowerCase();
+    }
+    const header = codeHeader(pre) || (surface && codeHeader(surface));
+    if (header) return header.language;
+    for (let parent = pre.parentElement, depth = 0; parent && depth < 3; parent = parent.parentElement, depth++) {
+      if (findCodeContainer(parent) === pre) return codeHeader(parent).language;
+    }
+    return "";
   }
 
   function collapseWhitespace(text) {

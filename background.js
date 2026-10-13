@@ -1524,27 +1524,15 @@ function normalizeCodeLanguage(language) {
     return lower;
   }
 
-  if (lower === "js") {
-    return "javascript";
-  }
-
-  if (lower === "ts") {
-    return "typescript";
-  }
-
-  if (lower === "py") {
-    return "python";
-  }
-
-  if (lower === "sh") {
-    return "shell";
-  }
-
-  if (lower === "md") {
-    return "markdown";
-  }
-
-  return "plain text";
+  const aliases = {
+    js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
+    py: "python", sh: "shell", shellscript: "shell", md: "markdown",
+    cpp: "c++", csharp: "c#", cs: "c#", fsharp: "f#", fs: "f#",
+    rb: "ruby", rs: "rust", golang: "go", yml: "yaml", dockerfile: "docker",
+    ps1: "powershell", objectivec: "objective-c", objc: "objective-c",
+    tex: "latex", rscript: "r", text: "plain text", plaintext: "plain text", txt: "plain text"
+  };
+  return Object.hasOwn(aliases, lower) ? aliases[lower] : "plain text";
 }
 
 function normalizeNotionId(id) {

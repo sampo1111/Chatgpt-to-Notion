@@ -10,6 +10,7 @@ const fixture = readFileSync(path.join(root, "tests/fixtures/diagram.html"), "ut
 const financialFixture = readFileSync(path.join(root, "tests/fixtures/chatgpt-financial-diagram.html"), "utf8");
 const cdsFixture = readFileSync(path.join(root, "tests/fixtures/chatgpt-cds-diagram.html"), "utf8");
 const bondRiskFixture = readFileSync(path.join(root, "tests/fixtures/chatgpt-bond-risk.html"), "utf8");
+const rCodeFixture = readFileSync(path.join(root, "tests/fixtures/chatgpt-r-code.html"), "utf8");
 const artifacts = path.join(root, "tests/artifacts");
 
 async function setup(t, width = 1280, html = fixture) {
@@ -45,6 +46,64 @@ function payloadFromHtml(html) {
   assert.ok(marker);
   return JSON.parse(Buffer.from(marker, "base64").toString("utf8"));
 }
+
+for (const width of [1280, 390]) {
+  test("the supplied ChatGPT R code surface copies its language at width " + width, async t => {
+    const html = `<div data-markdown-text-style="assistant-message"><p>Before</p>${rCodeFixture}<p>After</p></div>`;
+    const page = await setup(t, width, html);
+    const answer = page.locator("[data-markdown-text-style='assistant-message']");
+    const source = await answer.locator("pre code").textContent();
+    const before = await answer.innerHTML();
+    await page.locator("[data-chatgpt-to-notion-button]").click();
+    await page.waitForFunction(() => window.__writes.length === 1);
+    const data = await page.evaluate(() => ({ copy: __writes[0], stored: __stored.chatgptToNotionLastCopy }));
+    const payload = payloadFromHtml(data.copy["text/html"]);
+    assert.deepEqual(payload.blocks.map(block => block.type), ["paragraph", "code", "paragraph"]);
+    assert.deepEqual(payload.blocks[1], { type: "code", language: "r", code: source });
+    assert.deepEqual(data.stored.blocks, payload.blocks);
+    assert.ok(data.copy["text/plain"].includes("```r\n"));
+    assert.equal(await answer.innerHTML(), before);
+    const requests = [];
+    const background = vm.createContext({
+      console, AbortController, TextEncoder, setTimeout, clearTimeout,
+      chrome: { runtime: { onMessage: { addListener() {} } }, storage: { local: {
+        get: async () => ({ chatgptToNotionSettings: { notionToken: "test-token", enableFeature: true } }),
+        set: async () => {}
+      } } },
+      fetch: async (url, request) => {
+        assert.equal(request.method, "PATCH");
+        const children = JSON.parse(request.body).children;
+        requests.push(children);
+        return new Response(JSON.stringify({ results: children.map((_, index) => ({ id: String(index + 1).padStart(32, "0") })) }));
+      }
+    });
+    vm.runInContext(readFileSync(path.join(root, "background.js"), "utf8"), background);
+    await background.appendBlocksToNotionPage({ pageId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", blocks: payload.blocks, operationId: "r-code-test" });
+    const children = requests.flat();
+    assert.deepEqual(children.map(block => block.type), ["paragraph", "code", "paragraph"]);
+    assert.equal(children[1].code.language, "r");
+    assert.equal(children[1].code.rich_text.map(part => part.text.content).join(""), source);
+  });
+}
+
+test("Copy for Notion keeps toolbar languages in the clipboard and stored blocks", async t => {
+  const html = `<div data-message-author-role="assistant"><div class="markdown">
+    <p>Before</p><pre><div><span>R</span><button>Copy code</button></div><div><code>n = 0\nrepeat {\n  n = n + 1\n}</code></div></pre>
+    <div><div><span>Python</span><button>Copy</button></div><pre><code>print(1)</code></pre></div>
+    <pre data-language="cpp"><code>int n = 0;</code></pre><p>After</p>
+  </div></div>`;
+  const page = await setup(t, 1280, html);
+  await page.locator("[data-chatgpt-to-notion-button]").click();
+  await page.waitForFunction(() => window.__writes.length === 1);
+  const data = await page.evaluate(() => ({ copy: __writes[0], stored: __stored.chatgptToNotionLastCopy }));
+  const payload = payloadFromHtml(data.copy["text/html"]);
+  assert.deepEqual(payload.blocks.map(block => block.type), ["paragraph", "code", "code", "code", "paragraph"]);
+  assert.deepEqual(payload.blocks.filter(block => block.type === "code").map(block => block.language), ["r", "python", "cpp"]);
+  assert.equal(payload.blocks[1].code, "n = 0\nrepeat {\n  n = n + 1\n}");
+  assert.deepEqual(data.stored.blocks, payload.blocks);
+  assert.ok(data.copy["text/plain"].includes("```r\n"));
+  assert.ok(data.copy["text/html"].includes('data-language="python"'));
+});
 
 function checkImage(block, filename) {
   assert.equal(block.type, "image");

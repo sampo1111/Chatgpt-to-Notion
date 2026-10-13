@@ -69,6 +69,12 @@ ChatGPT, Gemini, Claude 답변을 Notion으로 옮길 때 수식이 깨지는 �
 
 - 붙여넣는 중 버튼이 `Pasting... Click to cancel` 상태가 되면 다시 눌러 중단할 수 있습니다.
 
+### 코드 블록 언어 (0.4.6)
+
+- 코드의 언어 클래스, 언어 속성, 코드 박스 상단의 언어 표시를 읽어 Notion 코드 블록에 적용합니다. `R`, `Python`, `JavaScript`, `C++` 등 Notion이 지원하는 언어를 유지합니다.
+- `py`, `js`, `cpp` 같은 약칭도 해당 언어로 변환합니다. 언어 표시가 없거나 Notion에서 지원하지 않는 언어는 `Plain Text`로 유지합니다.
+- ChatGPT의 `data-markdown-copy="code-block"` 코드 박스는 스크롤 영역이 여러 단계로 중첩되어 있어도 해당 박스의 언어 표시를 읽습니다. 언어 표시와 줄 바꿈·복사·스크롤 버튼은 본문에 포함하지 않습니다.
+
 ### 도식과 차트 복사 (0.4.4)
 
 - `Copy for Notion`으로 복사하면 박스형 도식, SVG, canvas 차트를 자동으로 PNG 이미지로 변환합니다. 도식 바깥의 본문과 수식은 기존처럼 편집 가능한 Notion 블록으로 유지됩니다.
